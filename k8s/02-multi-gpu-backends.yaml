@@ -1,0 +1,444 @@
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django-backend-gpu0
+  namespace: face-recognition-system
+  labels:
+    app: django-backend
+    gpu-id: "gpu0"
+    component: backend
+    gpu-count: "2"
+    gpu-type: "ti"
+    build: "multi-gpu"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: django-backend
+      gpu-id: "gpu0"
+      build: "multi-gpu"
+  template:
+    metadata:
+      labels:
+        app: django-backend
+        gpu-id: "gpu0"
+        component: backend
+        node-type: "master"
+        gpu-count: "2"
+        gpu-type: "ti"
+        build: "multi-gpu"
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: bluedove2-ms-7b98
+      initContainers:
+      - name: wait-for-redis
+        image: redis:7-alpine
+        command: ['sh', '-c']
+        args:
+        - |
+          until redis-cli -h redis-primary-service -p 6379 -a admin ping; do
+            echo "Waiting for Redis..."
+            sleep 10
+          done
+          echo "Redis is ready!"
+      containers:
+      - name: django-backend
+        image: bwalidd/new-django:cuda-12.6-dynamic-vv7 #v 3 5 6good  #v 3 good
+        workingDir: /app/Backend
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          # Wait a moment for services to be ready
+          sleep 5
+          
+          # Register GPUs and start heartbeat in background
+          python -c "
+          import os, threading, time, sys
+          sys.path.append('/app/Backend')
+          
+          try:
+              from Api.gpu_registry import register_pod_gpus, heartbeat
+              
+              # Get GPU IDs for registry
+              gpu_ids = [int(x.strip()) for x in os.getenv('GPU_REGISTRY_IDS', '0,1').split(',') if x.strip()]
+              print(f'Registering GPUs: {gpu_ids}')
+              print(f'Pod: {os.getenv(\"HOSTNAME\", \"unknown\")}')
+              print(f'Node: {os.getenv(\"NODE_NAME\", \"unknown\")}')
+              print(f'Service: {os.getenv(\"BACKEND_SERVICE_NAME\", \"unknown\")}')
+              
+              # Register GPUs
+              register_pod_gpus(gpu_ids)
+              print(f'GPU registration complete for GPUs: {gpu_ids}')
+              
+              # Start heartbeat thread
+              def heartbeat_loop():
+                  while True:
+                      try:
+                          heartbeat()
+                          print(f'Heartbeat sent for GPUs: {gpu_ids}')
+                          time.sleep(10)
+                      except Exception as e:
+                          print(f'Heartbeat error: {e}')
+                          time.sleep(10)
+              
+              heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+              heartbeat_thread.start()
+              print('GPU heartbeat thread started')
+              
+          except Exception as e:
+              print(f'Error starting GPU registry: {e}')
+              import traceback
+              traceback.print_exc()
+          " &
+          
+          # Start Django server
+          exec python manage.py runserver 0.0.0.0:9898
+        ports:
+        - containerPort: 9898
+        - containerPort: 6006
+        - containerPort: 8888
+        env:
+        # CUDA Configuration
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0,1"
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "0,1"
+        - name: GPU_ID
+          value: "0,1"
+        - name: GPU_COUNT
+          value: "2"
+        
+        # GPU Registry Configuration
+        - name: GPU_REGISTRY_IDS
+          value: "0,1"  # Global GPU IDs for registry
+        - name: GPU_GROUP
+          value: "0"
+        - name: BACKEND_SERVICE_NAME
+          value: "django-backend-gpu-0-service"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: REDIS_URL
+          value: "redis://:admin@redis-primary-service:6379/0"
+        
+        # Pod Configuration
+        - name: NODE_TYPE
+          value: "master"
+        - name: BACKEND_INSTANCE
+          value: "gpu0-multi"
+        - name: GPU_TYPE
+          value: "RTX 2080 Ti"
+        - name: MULTI_GPU_MODE
+          value: "true"
+        
+        # CUDA Performance Tuning
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "max_split_size_mb:256"
+        - name: NCCL_DEBUG
+          value: "INFO"
+        - name: NCCL_IB_DISABLE
+          value: "1"
+        - name: NCCL_P2P_DISABLE
+          value: "1"
+        - name: CUDA_VERSION
+          value: "12.6"
+        - name: CUDA_LAUNCH_BLOCKING
+          value: "0"
+        - name: OMP_NUM_THREADS
+          value: "4"
+        - name: MALLOC_TRIM_THRESHOLD_
+          value: "100000"
+        
+        # Database Configuration
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DATABASE_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DATABASE_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: POSTGRES_PASSWORD
+        
+        # Stream Configuration
+        - name: STREAM_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: STREAM_URL
+        
+        resources:
+          limits:
+            nvidia.com/gpu: 2
+            cpu: "2000m"
+            memory: "32Gi"
+          requests:
+            nvidia.com/gpu: 2
+            cpu: "1000m"
+            memory: "2Gi"
+        
+        readinessProbe:
+          httpGet:
+            path: /admin/
+            port: 9898
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        
+        livenessProbe:
+          httpGet:
+            path: /admin/
+            port: 9898
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+
+---
+# Django Backend GPU1 - WORKER NODE (2x RTX Super)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django-backend-gpu1
+  namespace: face-recognition-system
+  labels:
+    app: django-backend
+    gpu-id: "gpu1"
+    component: backend
+    gpu-count: "2"
+    gpu-type: "super"
+    build: "multi-gpu"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: django-backend
+      gpu-id: "gpu1"
+      build: "multi-gpu"
+  template:
+    metadata:
+      labels:
+        app: django-backend
+        gpu-id: "gpu1"
+        component: backend
+        node-type: "worker"
+        gpu-count: "2"
+        gpu-type: "super"
+        build: "multi-gpu"
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: bluedove-ms-7b98
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchLabels:
+                gpu-id: "gpu0"
+            topologyKey: kubernetes.io/hostname
+      initContainers:
+      - name: wait-for-redis
+        image: redis:7-alpine
+        command: ['sh', '-c']
+        args:
+        - |
+          until redis-cli -h redis-primary-service -p 6379 -a admin ping; do
+            echo "Waiting for Redis..."
+            sleep 10
+          done
+          echo "Redis is ready!"
+      containers:
+      - name: django-backend
+        image: bwalidd/new-django:cuda-12.6-dynamic-vv7 #v 3  6 5 good
+        workingDir: /app/Backend
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          # Wait a moment for services to be ready
+          sleep 5
+          
+          # Register GPUs and start heartbeat in background
+          python -c "
+          import os, threading, time, sys
+          sys.path.append('/app/Backend')
+          
+          try:
+              from Api.gpu_registry import register_pod_gpus, heartbeat
+              
+              # Get GPU IDs for registry
+              gpu_ids = [int(x.strip()) for x in os.getenv('GPU_REGISTRY_IDS', '2,3').split(',') if x.strip()]
+              print(f'Registering GPUs: {gpu_ids}')
+              print(f'Pod: {os.getenv(\"HOSTNAME\", \"unknown\")}')
+              print(f'Node: {os.getenv(\"NODE_NAME\", \"unknown\")}')
+              print(f'Service: {os.getenv(\"BACKEND_SERVICE_NAME\", \"unknown\")}')
+              
+              # Register GPUs
+              register_pod_gpus(gpu_ids)
+              print(f'GPU registration complete for GPUs: {gpu_ids}')
+              
+              # Start heartbeat thread
+              def heartbeat_loop():
+                  while True:
+                      try:
+                          heartbeat()
+                          print(f'Heartbeat sent for GPUs: {gpu_ids}')
+                          time.sleep(10)
+                      except Exception as e:
+                          print(f'Heartbeat error: {e}')
+                          time.sleep(10)
+              
+              heartbeat_thread = threading.Thread(target=heartbeat_loop, daemon=True)
+              heartbeat_thread.start()
+              print('GPU heartbeat thread started')
+              
+          except Exception as e:
+              print(f'Error starting GPU registry: {e}')
+              import traceback
+              traceback.print_exc()
+          " &
+          
+          # Start Django server
+          exec python manage.py runserver 0.0.0.0:9898
+        ports:
+        - containerPort: 9898
+        - containerPort: 6006
+        - containerPort: 8888
+        env:
+        # CUDA Configuration
+        - name: CUDA_VISIBLE_DEVICES
+          value: "0,1"  # Local CUDA devices
+        - name: NVIDIA_VISIBLE_DEVICES
+          value: "0,1"
+        - name: GPU_ID
+          value: "0,1"  # Local CUDA devices
+        - name: GPU_COUNT
+          value: "2"
+        
+        # GPU Registry Configuration
+        - name: GPU_REGISTRY_IDS
+          value: "2,3"  # Global GPU IDs for registry
+        - name: GPU_GROUP
+          value: "1"
+        - name: BACKEND_SERVICE_NAME
+          value: "django-backend-gpu-1-service"
+        - name: NODE_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: spec.nodeName
+        - name: HOSTNAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
+        - name: REDIS_URL
+          value: "redis://:admin@redis-primary-service:6379/0"
+        
+        # Pod Configuration
+        - name: NODE_TYPE
+          value: "worker"
+        - name: BACKEND_INSTANCE
+          value: "gpu1-multi"
+        - name: GPU_TYPE
+          value: "RTX Super"
+        - name: MULTI_GPU_MODE
+          value: "true"
+        
+        # CUDA Performance Tuning
+        - name: PYTORCH_CUDA_ALLOC_CONF
+          value: "max_split_size_mb:256"
+        - name: NCCL_DEBUG
+          value: "INFO"
+        - name: NCCL_IB_DISABLE
+          value: "1"
+        - name: NCCL_P2P_DISABLE
+          value: "1"
+        - name: CUDA_VERSION
+          value: "12.6"
+        - name: CUDA_LAUNCH_BLOCKING
+          value: "0"
+        - name: OMP_NUM_THREADS
+          value: "4"
+        - name: MALLOC_TRIM_THRESHOLD_
+          value: "100000"
+        
+        # Database Configuration
+        - name: DATABASE_HOST
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DATABASE_HOST
+        - name: DATABASE_PORT
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: DATABASE_PORT
+        - name: POSTGRES_DB
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_DB
+        - name: POSTGRES_USER
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: POSTGRES_USER
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: app-secrets
+              key: POSTGRES_PASSWORD
+        
+        # Stream Configuration
+        - name: STREAM_URL
+          valueFrom:
+            configMapKeyRef:
+              name: app-config
+              key: STREAM_URL
+        
+        resources:
+          limits:
+            nvidia.com/gpu: 2
+            cpu: "2000m"
+            memory: "32Gi"
+          requests:
+            nvidia.com/gpu: 2
+            cpu: "1000m"
+            memory: "2Gi"
+        
+        readinessProbe:
+          httpGet:
+            path: /admin/
+            port: 9898
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        
+        livenessProbe:
+          httpGet:
+            path: /admin/
+            port: 9898
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+
+
+---

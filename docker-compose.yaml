@@ -1,0 +1,256 @@
+version: "3.9"
+services:
+  redis:
+    image: redis:latest
+    ports:
+      - "6379:6379"
+    networks:
+      - AppNet
+    command: >
+      redis-server 
+      --requirepass admin 
+      --protected-mode no
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --appendonly no
+      --replicaof no one
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "admin", "ping"]
+      interval: 30s
+      timeout: 60s
+      retries: 1000000
+      start_period: 30s
+    restart: on-failure
+    init: true
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis_channel:
+    image: redis:latest
+    ports:
+      - "6380:6380"
+    networks:
+      - AppNet
+    command: >
+      redis-server 
+      --port 6380
+      --requirepass admin 
+      --protected-mode no
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --appendonly no
+      --replicaof no one
+    volumes:
+      - redis_channel_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-p", "6380", "-a", "admin", "ping"]
+      interval: 30s
+      timeout: 60s
+      retries: 1000000
+      start_period: 30s
+    restart: on-failure
+    init: true
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  front:
+    build:
+      context: .
+      dockerfile: Dockerfile.Front
+    networks:
+      - AppNet
+    volumes:
+      - ./Frontend/:/app/
+      - /app/node_modules
+    environment:
+      - CHOKIDAR_USEPOLLING=true
+    ports:
+      - 9999:9999
+    restart: always
+    init: true
+    depends_on:
+      - backend
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.Back
+    networks:
+      - AppNet
+    env_file:
+      - ./Backend/.env
+    ports:
+      - 9898:9898
+    volumes:
+      - ./Backend:/app/Backend
+    restart: always
+    init: true
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    runtime: nvidia
+    devices:
+      - /dev/nvidia0
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  database:
+    image: postgres
+    restart: on-failure
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "db_prod"]
+      interval: 5s
+      timeout: 60s
+      retries: 5
+      start_period: 80s
+    env_file:
+      - ./.env
+    volumes:
+      - databaseVolume:/var/lib/postgresql/data
+    networks:
+      - AppNet
+    init: true
+    ports:
+      - "5432:5432"
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  janus-gateway:
+    image: canyan/janus-gateway:master
+    container_name: janus-gateway
+    restart: unless-stopped
+    network_mode: "host"
+    volumes:
+      - ./JanusApi/janus.jcfg:/usr/local/etc/janus/janus.jcfg
+      - ./JanusApi/janus.plugin.streaming.jcfg:/usr/local/etc/janus/janus.plugin.streaming.jcfg
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - turn-server
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8088/janus/info || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  stream:
+    image: bluenviron/mediamtx
+    container_name: mediamtx
+    ports:
+      - "8554:8554"
+    networks:
+      - AppNet
+    restart: always
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  stream_nors:
+    image: bluenviron/mediamtx
+    container_name: mediamtx_nors
+    ports:
+      - "8555:8554"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+    networks:
+      - AppNet
+    restart: always
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  normal_stream:
+    image: bluenviron/mediamtx
+    container_name: normal_stream
+    ports:
+      - "8556:8554"
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml
+    networks:
+      - AppNet
+    restart: always
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  turn-server:
+    image: coturn/coturn:latest
+    container_name: coturn
+    network_mode: "host"
+    volumes:
+      - ./turnserver.conf:/etc/coturn/turnserver.conf
+      - ./users.txt:/etc/coturn/users.txt
+    ports:
+      - "3478:3478"
+      - "3478:3478/udp"
+      - "5349:5349" # TURNS port
+      - "5349:5349/udp" # TURNS port
+      - "49152-65535:49152-65535/udp" # Expanded relay port range
+    restart: unless-stopped
+    environment:
+      - TZ=UTC
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 3478 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  flower-celery:
+    build:
+      context: .
+      dockerfile: Dockerfile.celery.monitor
+    container_name: celerymonitor
+    ports:
+      - 5555:5555
+    networks:
+      - AppNet
+    restart: always
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
+    depends_on:
+      - redis
+      - database
+
+networks:
+  AppNet:
+volumes:
+  databaseVolume:
+  redis_data:
+  redis_channel_data:

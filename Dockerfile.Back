@@ -1,0 +1,129 @@
+# FROM python:3.10
+# FROM nvidia/cuda:12.3.1-devel-ubuntu22.04
+# FROM python:3.10
+FROM nvcr.io/nvidia/pytorch:24.01-py3 
+
+ENV PYTHONDONTWRITEBYTECODE 1
+
+RUN apt-get update && \
+    apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    wget \
+    yasm \
+    pkg-config \
+    libnuma-dev \
+    software-properties-common && \
+    apt-get install -y \
+    libx264-dev \
+    libx265-dev \
+    libnuma-dev \
+    libvpx-dev \
+    libfdk-aac-dev \
+    libmp3lame-dev \
+    libopus-dev \
+    libass-dev \
+    libfreetype6-dev \
+    libvorbis-dev \
+    libxcb1-dev \
+    libxcb-shm0-dev \
+    libxcb-xfixes0-dev \
+    texinfo \
+    zlib1g-dev \
+    nasm \
+    libfreetype6-dev \
+    libfontconfig1-dev \
+    libfribidi-dev \
+    libaom-dev \
+    python3-pip && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# Set working directory
+
+# Clone ffmpeg source code
+WORKDIR /nv
+RUN git clone --depth 1 https://github.com/FFmpeg/nv-codec-headers.git --branch n12.2.72.0 && \
+    cd nv-codec-headers && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf nv-codec-headers
+WORKDIR /git
+RUN git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git --branch n7.0 ffmpeg
+
+# Build and install ffmpeg with NVENC support
+WORKDIR /git/ffmpeg
+# CMD sleep 10000
+RUN ./configure --enable-nonfree --enable-gpl --enable-cuda-nvcc --enable-libnpp --enable-libaom --enable-libass \
+    --enable-libfdk-aac --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 \
+    --enable-libx265 --enable-nvenc --extra-cflags=-I/usr/local/cuda/include --extra-ldflags=-L/usr/local/cuda/lib64 && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
+# ENV CUDA_VISIBLE_DEVICES="all"
+WORKDIR /app
+
+
+COPY ./Backend/face_recognition . 
+
+RUN make install 
+RUN apt update && apt-get install -y libgl1-mesa-glx libglib2.0-0 libgtk2.0-dev pkg-config
+
+# WORKDIR /app/face_recognition
+
+
+
+WORKDIR /app
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip software-properties-common 
+
+
+COPY ./Backend/requirements.txt .
+RUN python3 -m pip install --upgrade pip
+RUN pip install cmake gunicorn
+RUN pip install -r requirements.txt
+RUN python3 -c 'from opencv_fixer import AutoFix; AutoFix()' 
+ENV OPENCV_VIDEOIO_PRIORITY_MSMF=0
+RUN apt-get update && apt-get install -y xvfb
+WORKDIR /app/Backend/
+COPY ./Backend/insert_lines.sh .
+RUN chmod +x insert_lines.sh 
+# RUN ./insert_lines.sh /usr/local/lib/python3.10/dist-packages/ultralytics/yolo/engine/predictor.py "import cv2" \
+#     "cv2.waitKey = lambda x: None" \
+#     "cv2.imshow = lambda *args, **kwargs: None" \
+#     "cv2.destroyAllWindows = lambda: None" \
+#     "cv2.namedWindow = lambda *args, **kwargs: None"
+RUN apt-get update && apt-get install -y \
+    libsm6 \
+    libxext6 \
+    && rm -rf /var/lib/apt/lists/*
+ENV OPENCV_FFMPEG_CAPTURE_OPTIONS="rtsp_transport;udp"
+
+
+# cv2.waitKey = lambda x: None
+# cv2.imshow = lambda *args, **kwargs: None
+# cv2.destroyAllWindows = lambda: None
+# cv2.namedWindow = lambda *args, **kwargs: None
+EXPOSE 9898
+COPY ./Backend/default.yaml /usr/local/lib/python3.10/dist-packages/ultralytics/yolo/configs/default.yaml
+
+
+# CMD ["sh", "-c","rq worker-pool -n 10 --url redis://:admin@redis-primary-service:6379/0 &  python3 manage.py makemigrations Api && python3 manage.py migrate Api && python3 manage.py migrate & (sleep 10 && python3 manage.py load_roles && python3 manage.py createsuperuser --noinput || echo 'already exist' ) & gunicorn --preload Backend.wsgi:application -c gunicorn.py & daphne Backend.asgi:application -b 0.0.0.0 -p 8001"]
+CMD ["sh", "-c","python3 celery_supervisor.py & celery -A Backend.celery_prefork worker --queues=prefork_queue --concurrency=8 --max-tasks-per-child=50 --prefetch-multiplier=1   -Ofair --heartbeat-interval=30 -n worker1@%h & celery -A Backend.celery_prefork worker --queues=prefork_queue --concurrency=8 --max-tasks-per-child=50 --prefetch-multiplier=1   -Ofair --heartbeat-interval=30 -n worker2@%h &  python3 manage.py makemigrations Api && python3 manage.py migrate Api && python3 manage.py migrate  & celery -A Backend.healthCheck beat &  (sleep 15 && python3 manage.py load_roles && python3 manage.py createsuperuser --noinput || echo 'already exist' ) & python3 manage.py runserver 0.0.0.0:9898"]
+# python3 /app/Backend/AiModels/ultralytics/yolo/v8/detect/predict.py model="/app/Backend/AiModels/models/PersonYolov8M/weights/best.pt" source="/app/Backend/bg.mp4" conf=0.5 line='[1150, 438, 1425, 545]' location="Parking" camera=1 camera_name="entry_door" url='ws://34.173.77.60:3005/' show=False save=False
+# python3 /app/Backend/AiAreaDetection/ultralytics/yolo/v8/detect/predict.py model="/app/Backend/AiModels/models/PersonYolov8M/weights/best.pt" source="/app/Backend/bg.mp4" conf=0.5 region='[1150, 438, 1425, 545]' location="Parking" camera=1 camera_name="entry_door" url='ws://34.173.77.60:3005/' show=False save=False
+
+
+# python -c "
+# import cv2
+# from PIL import Image 
+# cv2.waitKey = lambda x: None
+# cv2.imshow = lambda *args, **kwargs: None
+# cv2.destroyAllWindows = lambda: None
+# Image.show = lambda *args, **kwargs: None;
+# exec(open('predict.py').read())
+# " model="/app/Backend/AiModels/models/PersonYolov8M/weights/best.pt" source="rtsp://rtspstream:4a873a50eac514540871149b4c35f5b3@zephyr.rtsp.stream/pattern" conf=0.5 region='[1150, 438, 1425, 545]' location='Parking' camera=1 camera_name='entry_door' url='ws://34.173.77.60:3005/' show=False save=False
+  
+

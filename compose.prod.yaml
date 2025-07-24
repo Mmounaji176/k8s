@@ -1,0 +1,93 @@
+version : "3.9"
+
+services:
+  redis:
+      image: redis:latest
+      ports:
+        - "6379:6379"
+      environment:
+        - REDIS_USER=admin
+        - REDIS_PASSWORD=testtest
+      networks:
+        - AppNet
+      restart: always
+
+  front:
+    build:
+      context: .
+      dockerfile: Dockerfile.Front.Prod
+    networks:
+      - AppNet
+    volumes:
+      - ./Frontend/src:/app/src
+      - ./Frontend/store:/app/store
+      - ./Frontend/routes:/app/routes
+      - ./Frontend/services:/app/services
+    ports:
+      - 9999:9999
+    restart: always
+    init: true
+    depends_on:
+      - backend
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.Back
+    networks:
+      - AppNet
+    env_file:
+      - ./Backend/.env
+    ports:
+      - 9898:9898
+    volumes:
+      - ./Backend:/app/Backend
+    restart: always
+    init: true
+    depends_on :
+      database:
+        condition: service_healthy
+    runtime: nvidia
+    devices:
+      - /dev/nvidia0
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+    shm_size: '512M'
+  database:
+    image: postgres
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready", "-d", "db_prod"]
+      interval: 30s
+      timeout: 60s
+      retries: 5
+      start_period: 80s 
+    env_file:
+      - ./.env
+    volumes:
+      - databaseVolume:/var/lib/postgresql/data
+    networks:
+      - AppNet
+    init: true
+  janus-gateway:
+    image: canyan/janus-gateway
+    container_name: janus-gateway
+    restart: unless-stopped
+    network_mode: "host"
+    volumes:
+      - ./JanusApi/janus.jcfg:/usr/local/etc/janus/janus.jcfg
+      - ./JanusApi/janus.plugin.streaming.jcfg:/usr/local/etc/janus/janus.plugin.streaming.jcfg
+
+  stream:
+    image: bluenviron/mediamtx
+    container_name: mediamtx
+    ports:
+      - "8554:8554"
+    networks:
+      - AppNet
+    restart: always
+
+  
+networks:
+  AppNet:
+volumes:
+  databaseVolume:

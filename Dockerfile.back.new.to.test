@@ -1,0 +1,103 @@
+FROM nvcr.io/nvidia/pytorch:24.01-py3 
+
+ENV PYTHONDONTWRITEBYTECODE 1
+
+# Install system dependencies
+RUN apt-get update && \
+    apt-get install -y \
+    build-essential \
+    cmake \
+    git \
+    wget \
+    yasm \
+    pkg-config \
+    libnuma-dev \
+    software-properties-common \
+    libx264-dev \
+    libx265-dev \
+    libnuma-dev \
+    libvpx-dev \
+    libfdk-aac-dev \
+    libmp3lame-dev \
+    libopus-dev \
+    libass-dev \
+    libfreetype6-dev \
+    libvorbis-dev \
+    libxcb1-dev \
+    libxcb-shm0-dev \
+    libxcb-xfixes0-dev \
+    texinfo \
+    zlib1g-dev \
+    nasm \
+    libfreetype6-dev \
+    libfontconfig1-dev \
+    libfribidi-dev \
+    libaom-dev \
+    python3-pip && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+# NVIDIA codec headers
+WORKDIR /nv
+RUN git clone --depth 1 https://git.videolan.org/git/ffmpeg/nv-codec-headers.git && \
+    cd nv-codec-headers && \
+    make && \
+    make install && \
+    cd .. && \
+    rm -rf nv-codec-headers
+
+# FFmpeg
+WORKDIR /git
+RUN git clone --depth 1 https://github.com/FFmpeg/FFmpeg.git ffmpeg
+
+WORKDIR /git/ffmpeg
+RUN ./configure --enable-nonfree --enable-gpl --enable-cuda-nvcc --enable-libnpp --enable-libaom --enable-libass \
+    --enable-libfdk-aac --enable-libmp3lame --enable-libopus --enable-libvorbis --enable-libvpx --enable-libx264 \
+    --enable-libx265 --enable-nvenc --extra-cflags=-I/usr/local/cuda/include --extra-ldflags=-L/usr/local/cuda/lib64 && \
+    make -j$(nproc) && \
+    make install && \
+    ldconfig
+
+WORKDIR /app
+
+# Face recognition setup
+COPY ./Backend/face_recognition . 
+RUN make install 
+RUN apt update && apt-get install -y libgl1-mesa-glx libglib2.0-0 libgtk2.0-dev pkg-config
+
+# Python dependencies
+WORKDIR /app
+RUN apt-get update && \
+    apt-get install -y python3 python3-pip software-properties-common 
+
+COPY ./Backend/requirements.txt .
+RUN python3 -m pip install --upgrade pip
+RUN pip install cmake gunicorn
+RUN pip install -r requirements.txt
+RUN python3 -c 'from opencv_fixer import AutoFix; AutoFix()' 
+
+ENV OPENCV_VIDEOIO_PRIORITY_MSMF=0
+RUN apt-get update && apt-get install -y xvfb
+
+# Setup OpenCV
+WORKDIR /app/Backend/
+COPY ./Backend/insert_lines.sh .
+RUN chmod +x insert_lines.sh 
+RUN ./insert_lines.sh /usr/local/lib/python3.10/dist-packages/ultralytics/yolo/engine/predictor.py "import cv2" \
+    "cv2.waitKey = lambda x: None" \
+    "cv2.imshow = lambda *args, **kwargs: None" \
+    "cv2.destroyAllWindows = lambda: None" \
+    "cv2.namedWindow = lambda *args, **kwargs: None"
+RUN pip install gevent eventlet psutil
+
+# Copy YOLO config
+COPY ./Backend/default.yaml /usr/local/lib/python3.10/dist-packages/ultralytics/yolo/configs/default.yaml
+
+# Copy supervisor and startup scripts
+COPY worker_supervisor.py /app/Backend/worker_supervisor.py
+COPY startup.sh /app/Backend/startup.sh
+RUN chmod +x /app/Backend/worker_supervisor.py /app/Backend/startup.sh
+
+EXPOSE 9898
+
+CMD ["/bin/bash", "/app/Backend/startup.sh"]

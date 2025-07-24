@@ -1,0 +1,49 @@
+# 01-namespace-and-config.yaml
+# Namespace, ConfigMaps, and Secrets
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: face-recognition-system
+  labels:
+    name: face-recognition-system
+
+---
+# ConfigMap for shared configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: face-recognition-system
+data:
+  REDIS_URL: "redis://:admin@redis-primary-service:6379/0"
+  REDIS_CHANNEL_URL: "redis://:admin@redis-channels-service:6380/0"
+  DATABASE_URL: "postgresql://FaceApi:example@postgres-service:5432/FaceApi"
+  DATABASE_HOST: "postgres-service"
+  DATABASE_PORT: "5432"
+  CELERY_BROKER_URL: "redis://:admin@redis-primary-service:6379/0"
+  CELERY_RESULT_BACKEND: "redis://:admin@redis-primary-service:6379/0"
+  DJANGO_SUPERUSER_USERNAME: "bluedove"
+  DJANGO_SUPERUSER_EMAIL: "root@root.com"
+  STREAM_IP: "mediamtx-normal-service"
+  STREAM_PORT: "8554"
+  STREAM_PROTOCOL: "rtmp"
+  STREAM_URL: "rtsp://34.60.157.241/live/your_stream"
+  POSTGRES_DB: "FaceApi"
+  POSTGRES_USER: "FaceApi"
+
+---
+# Secrets for sensitive data
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: face-recognition-system
+type: Opaque
+data:
+  POSTGRES_PASSWORD: ZXhhbXBsZQ==  # base64 encoded "example"
+  POSTGRES_USER: RmFjZUFwaQ==  # base64 encoded "FaceApi"
+  POSTGRES_DB: RmFjZUFwaQ==  # base64 encoded "FaceApi"
+  DJANGO_SUPERUSER_PASSWORD: Qmx1ZWRvdmUxMjM0  # base64 encoded "Bluedove1234"
+  REDIS_PASSWORD: YWRtaW4=  # base64 encoded "admin"
+

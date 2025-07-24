@@ -1,0 +1,1991 @@
+# COTURN Service (for external access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: coturn-service
+  namespace: face-recognition-system
+  labels:
+    component: networking
+spec:
+  selector:
+    app: coturn
+  ports:
+  - protocol: TCP
+    port: 3478
+    targetPort: 3478
+    nodePort: 30478
+    name: coturn-tcp
+  - protocol: UDP
+    port: 3478
+    targetPort: 3478
+    nodePort: 30478
+    name: coturn-udp
+  - protocol: TCP
+    port: 5349
+    targetPort: 5349
+    nodePort: 30349
+    name: coturn-tls-tcp
+  - protocol: UDP
+    port: 5349
+    targetPort: 5349
+    nodePort: 30349
+    name: coturn-tls-udp
+  type: NodePort
+
+---
+
+# ConfigMap for COTURN server configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: coturn-config
+  namespace: face-recognition-system
+  labels:
+    app: coturn
+    component: networking
+data:
+  turnserver.conf: |
+    # Basic server configuration
+    listening-port=3478
+    tls-listening-port=5349
+    listening-ip=0.0.0.0
+    relay-ip=0.0.0.0
+
+    # Replace with your server's public IP
+    external-ip=coturn-service
+
+    # Authentication
+    lt-cred-mech
+    user=admin:admin
+    realm=coturn-service
+    no-cli
+    no-tls
+    no-dtls
+    
+    # TLS configuration (optional but recommended)
+    # cert=/etc/coturn/cert.pem
+    # pkey=/etc/coturn/privkey.pem
+
+    # Relay ports range
+    min-port=49152
+    max-port=65535
+
+    # Logging
+    verbose
+    fingerprint
+
+    # Security and performance
+    stale-nonce=600
+    max-bps=3000000
+    no-multicast-peers
+    max-allocate-lifetime=3600
+    channel-lifetime=3600
+    permission-lifetime=3600
+    
+    # Enable both UDP and TCP (0 means disable the no-relay option, i.e., enable relay)
+    no-tcp-relay=0
+    no-udp-relay=0
+
+    # CLI password
+    # cli-password=qwerty
+
+    # Optimize for production
+    total-quota=3600
+    bps-capacity=0
+    mobility
+    no-software-attribute
+
+    # Allow peers from any IP range (corrected format)
+    allowed-peer-ip=0.0.0.0-255.255.255.255
+
+
+---
+# Updated Deployment using ConfigMap
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: coturn-server
+  namespace: face-recognition-system
+  labels:
+    app: coturn
+    component: networking
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: coturn
+  template:
+    metadata:
+      labels:
+        app: coturn
+        component: networking
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: bluedove-ms-7b98
+      hostNetwork: true  # Required for COTURN NAT traversal
+      containers:
+      - name: coturn
+        image: coturn/coturn:latest
+        env:
+        - name: TZ
+          value: "UTC"
+        - name: EXTERNAL_IP
+          value: "facerec.local"
+        - name: LISTENING_PORT
+          value: "3478"
+        - name: TLS_LISTENING_PORT
+          value: "5349"
+        - name: RELAY_IP
+          value: "facerec.local"
+        command:
+        - turnserver
+        - -c
+        - /etc/coturn/turnserver.conf
+        - --log-file=stdout
+        ports:
+        - containerPort: 3478
+          protocol: TCP
+        - containerPort: 3478
+          protocol: UDP
+        - containerPort: 5349
+          protocol: TCP
+        - containerPort: 5349
+          protocol: UDP
+        - containerPort: 49152
+          protocol: UDP
+          name: relay-start
+        - containerPort: 65535
+          protocol: UDP
+          name: relay-end
+        volumeMounts:
+        - name: coturn-config-volume
+          mountPath: /etc/coturn/turnserver.conf
+          subPath: turnserver.conf
+          readOnly: true
+        resources:
+          limits:
+            cpu: "1000m"
+            memory: "1Gi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+        readinessProbe:
+          tcpSocket:
+            port: 3478
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 3478
+          initialDelaySeconds: 30
+          periodSeconds: 30
+      volumes:
+      - name: coturn-config-volume
+        configMap:
+          name: coturn-config
+          items:
+          - key: turnserver.conf
+            path : turnserver.conf
+---
+
+
+# janus ConfigMap (for additional configuration)
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: janus-config
+  namespace: face-recognition-system
+  labels:
+    app: janus
+    component: config
+data:
+  janus.jcfg: |
+    # General configuration: folders where the configuration and the plugins
+    # can be found, how output should be logged, whether Janus should run as
+    # a daemon or in foreground, default interface to use, debug/logging level
+    # and, if needed, shared apisecret and/or token authentication mechanism
+    # between application(s) and Janus.
+    general: {
+            
+            # Optimize event handling
+            event_loops = 8
+            
+            # Enable task pool optimization
+            task_pool_size = 100
+            configs_folder = "/usr/local/etc/janus"                 # Configuration files folder
+            plugins_folder = "/usr/local/lib/janus/plugins"                 # Plugins folder
+            transports_folder = "/usr/local/lib/janus/transports"   # Transports folder
+            events_folder = "/usr/local/lib/janus/events"                   # Event handlers folder
+            loggers_folder = "/usr/local/lib/janus/loggers"                 # External loggers folder
+
+                    # The next settings configure logging
+            #log_to_stdout = false                                  # Whether the Janus output should be written
+                                                                                            # to stdout or not (default=true)
+            #log_to_file = "/path/to/janus.log"             # Whether to use a log file or not
+            debug_level = 4                                                 # Debug/logging level, valid values are 0-7
+            #debug_timestamps = true                                # Whether to show a timestamp for each log line
+            #debug_colors = false                                   # Whether colors should be disabled in the log
+            #debug_locks = true                                             # Whether to enable debugging of locks (very verbose!)
+            #log_prefix = "[janus] "                                # In case you want log lines to be prefixed by some
+                                                                                            # custom text, you can use the 'log_prefix' property.
+                                                                                            # It supports terminal colors, meaning something like
+                                                                                            # "[\x1b[32mjanus\x1b[0m] " would show a green "janus"
+                                                                                            # string in square brackets (assuming debug_colors=true).
+
+                    # This is what you configure if you want to launch Janus as a daemon
+            #daemonize = true                                               # Whether Janus should run as a daemon
+                                                                                            # or not (default=run in foreground)
+            #pid_file = "/path/to/janus.pid"                # PID file to create when Janus has been
+                                                                                            # started, and to destroy at shutdown
+
+                    # There are different ways you can authenticate the Janus and Admin APIs
+            #api_secret = "janusrocks"              # String that all Janus requests must contain
+                                                                            # to be accepted/authorized by the Janus core.
+                                                                            # Useful if you're wrapping all Janus API requests
+                                                                            # in your servers (that is, not in the browser,
+                                                                            # where you do the things your way) and you
+                                                                            # don't want other application to mess with
+                                                                            # this Janus instance.
+            #token_auth = true                              # Enable a token based authentication
+                                                                            # mechanism to force users to always provide
+                                                                            # a valid token in all requests. Useful if
+                                                                            # you want to authenticate requests from web
+                                                                            # users.
+            #token_auth_secret = "janus"    # Use HMAC-SHA1 signed tokens (with token_auth). Note that
+                                                                            # without this, the Admin API MUST
+                                                                            # be enabled, as tokens are added and removed
+                                                                            # through messages sent there.
+            admin_secret = "janusoverlord"  # String that all Janus requests must contain
+                                                                            # to be accepted/authorized by the admin/monitor.
+                                                                            # only needed if you enabled the admin API
+                                                                            # in any of the available transports.
+
+                    # Generic settings
+            interface = "janus-service"                  # Interface to use (will be used in SDP)
+            #server_name = "MyJanusInstance"# Public name of this Janus instance
+                                                                            # as it will appear in an info request
+            #session_timeout = 60                   # How long (in seconds) we should wait before
+                                                                            # deciding a Janus session has timed out. A
+                                                                            # session times out when no request is received
+                                                                            # for session_timeout seconds (default=60s).
+                                                                            # Setting this to 0 will disable the timeout
+                                                                            # mechanism, which is NOT suggested as it may
+                                                                            # risk having orphaned sessions (sessions not
+                                                                            # controlled by any transport and never freed).
+                                                                            # To avoid timeouts, keep-alives can be used.
+            #candidates_timeout = 45                # How long (in seconds) we should keep hold of
+                                                                            # pending (trickle) candidates before discarding
+                                                                            # them (default=45s). Notice that setting this
+                                                                            # to 0 will NOT disable the timeout, but will
+                                                                            # be considered an invalid value and ignored.
+            #reclaim_session_timeout = 0    # How long (in seconds) we should wait for a
+                                                                            # janus session to be reclaimed after the transport
+                                                                            # is gone. After the transport is gone, a session
+                                                                            # times out when no request is received for
+                                                                            # reclaim_session_timeout seconds (default=0s).
+                                                                            # Setting this to 0 will disable the timeout
+                                                                            # mechanism, and sessions will be destroyed immediately
+                                                                            # if the transport is gone.
+            #recordings_tmp_ext = "tmp"             # The extension for recordings, in Janus, is
+                                                                            # .mjr, a custom format we devised ourselves.
+                                                                            # By default, we save to .mjr directly. If you'd
+                                                                            # rather the recording filename have a temporary
+                                                                            # extension while it's being saved, and only
+                                                                            # have the .mjr extension when the recording
+                                                                            # is over (e.g., to automatically trigger some
+                                                                            # external scripts), then uncomment and set the
+                                                                            # recordings_tmp_ext property to the extension
+                                                                            # to add to the base (e.g., tmp --> .mjr.tmp).
+            #event_loops = 8                                # By default, Janus handles each have their own
+                                                                            # event loop and related thread for all the media
+                                                                            # routing and management. If for some reason you'd
+                                                                            # rather limit the number of loop/threads, and
+                                                                            # you want handles to share those, you can do that
+                                                                            # configuring the event_loops property: this will
+                                                                            # spawn the specified amount of threads at startup,
+                                                                            # run a separate event loop on each of them, and
+                                                                            # add new handles to one of them when attaching.
+                                                                            # Notice that, while cutting the number of threads
+                                                                            # and possibly reducing context switching, this
+                                                                            # might have an impact on the media delivery,
+                                                                            # especially if the available loops can't take
+                                                                            # care of all the handles and their media in time.
+                                                                            # As such, if you want to use this you should
+                                                                            # provision the correct value according to the
+                                                                            # available resources (e.g., CPUs available).
+            #allow_loop_indication = true   # In case a static number of event loops is
+                                                                            # configured as explained above, by default
+                                                                            # new handles will be allocated on one loop or
+                                                                            # another by the Janus core itself. In some cases
+                                                                            # it may be helpful to manually tell the Janus
+                                                                            # core which loop a handle should be added to,
+                                                                            # e.g., to group viewers of the same stream on
+                                                                            # the same loop. This is possible via the Janus
+                                                                            # API when performing the 'attach' request, but
+                                                                            # only if allow_loop_indication is set to true;
+                                                                            # it's set to false by default to avoid abuses.
+                                                                            # Don't change if you don't know what you're doing!
+            #task_pool_size = 100                   # By default, while the Janus core is single thread
+                                                                            # when it comes to processing incoming messages, it
+                                                                            # also uses a task pool with an indefinite amount
+                                                                            # of helper threads spawned on demand to handle
+                                                                            # messages addressed to plugins. If you want to
+                                                                            # limit this task pool size with a maximum number
+                                                                            # of concurrent threads, set the 'task_pool_size'
+                                                                            # property accordingly: a value of '0' means
+                                                                            # 'indefinite' and is the default. Notice that
+                                                                            # threads are automatically destroyed when unused
+                                                                            # for a while, so whatever value you choose simply
+                                                                            # puts a cap on the maximum concurrency.
+                                                                            # Don't change if you don't know what you're doing!
+            #opaqueid_in_api = true                 # Opaque IDs set by applications are typically
+                                                                            # only passed to event handlers for correlation
+                                                                            # purposes, but not sent back to the user or
+                                                                            # application in the related Janus API responses
+                                                                            # or events; in case you need them to be in the
+                                                                            # Janus API too, set this property to 'true'.
+            #hide_dependencies = true               # By default, a call to the "info" endpoint of
+                                                                            # either the Janus or Admin API now also returns
+                                                                            # the versions of the main dependencies (e.g.,
+                                                                            # libnice, libsrtp, which crypto library is in
+                                                                            # use and so on). Should you want that info not
+                                                                            # to be disclose, set 'hide_dependencies' to true.
+            #exit_on_dl_error = false               # If a Janus shared libary cannot be loaded or an expected
+                                                                            # symbol is not found, exit immediately.
+
+                    # The following is ONLY useful when debugging RTP/RTCP packets,
+                    # e.g., to look at unencrypted live traffic with a browser. By
+                    # default it is obviously disabled, as WebRTC mandates encryption.
+            #no_webrtc_encryption = true
+
+                    # Janus provides ways via its API to specify custom paths to save
+                    # files to (e.g., recordings, pcap captures and the like). In order
+                    # to avoid people can mess with folders they're not supposed to,
+                    # you can configure an array of folders that Janus should prevent
+                    # creating files in. If the 'protected_folder' property below is
+                    # commented, no folder is protected.
+                    # Notice that at the moment this only covers attempts to start
+                    # an .mjr recording and pcap/text2pcap packet captures.
+            protected_folders = [
+                    "/bin",
+                    "/boot",
+                    "/dev",
+                    "/etc",
+                    "/initrd",
+                    "/lib",
+                    "/lib32",
+                    "/lib64",
+                    "/proc",
+                    "/sbin",
+                    "/sys",
+                    "/usr",
+                    "/var",
+                            # We add what are usually the folders Janus is installed to
+                            # as well: we don't just put "/opt/janus" because that would
+                            # include folders like "/opt/janus/share" that is where
+                            # recordings might be saved to by some plugins
+                    "/opt/janus/bin",
+                    "/opt/janus/etc",
+                    "/opt/janus/include",
+                    "/opt/janus/lib",
+                    "/opt/janus/lib32",
+                    "/opt/janus/lib64",
+                    "/opt/janus/sbin"
+            ],
+             codecos = [
+                    "h264",
+                    "vp8",
+                    "vp9"
+            ]
+            
+            # Enable simulcast
+            simulcast = true
+            
+            # Enable SVC
+            svc = true
+            
+            # Better RTCP feedback
+            min_nack_queue = 500
+            
+            # Enable REMB
+            remb_startup = 1000000
+            
+            # Enable temporal layer switching
+            switching_delay = 1
+    }
+
+    # Certificate and key to use for DTLS (and passphrase if needed). If missing,
+    # Janus will autogenerate a self-signed certificate to use. Notice that
+    # self-signed certificates are fine for the purpose of WebRTC DTLS
+    # connectivity, for the time being, at least until Identity Providers
+    # are standardized and implemented in browsers. If for some reason you
+    # want to enforce the DTLS stack in Janus to enforce valid certificates
+    # from peers, though, you can do that setting 'dtls_accept_selfsigned' to
+    # 'false' below: DO NOT TOUCH THAT IF YOU DO NOT KNOW WHAT YOU'RE DOING!
+    # You can also configure the DTLS ciphers to offer: the default if not
+    # set is "DEFAULT:!NULL:!aNULL:!SHA256:!SHA384:!aECDH:!AESGCM+AES256:!aPSK"
+    # Finally, by default NIST P-256 certificates are generated (see #1997),
+    # but RSA generation is still supported if you set 'rsa_private_key' to 'true'.
+    certificates: {
+            #cert_pem = "/path/to/certificate.pem"
+            #cert_key = "/path/to/key.pem"
+            #cert_pwd = "secretpassphrase"
+            #dtls_accept_selfsigned = false
+            #dtls_ciphers = "your-desired-openssl-ciphers"
+            #rsa_private_key = false
+    }
+
+    # Media-related stuff: you can configure whether if you want to enable IPv6
+    # support (and link-local IPs), the minimum size of the NACK queue (in ms,
+    # defaults to 200ms) for retransmissions no matter the RTT, the range of
+    # ports to use for RTP and RTCP (by default, no range is envisaged), the
+    # starting MTU for DTLS (1200 by default, it adapts automatically),
+    # how much time, in seconds, should pass with no media (audio or
+    # video) being received before Janus notifies you about this (default=1s,
+    # 0 disables these events entirely), how many lost packets should trigger a
+    # 'slowlink' event to users (default=0, disabled), and how often, in milliseconds,
+    # to send the Transport Wide Congestion Control feedback information back
+    # to senders, if negotiated (default=200ms). Finally, if you're using BoringSSL
+    # you can customize the frequency of retransmissions: OpenSSL has a fixed
+    # value of 1 second (the default), while BoringSSL can override that. Notice
+    # that lower values (e.g., 100ms) will typically get you faster connection
+    # times, but may not work in case the RTT of the user is high: as such,
+    # you should pick a reasonable trade-off (usually 2*max expected RTT).
+    media: {
+        # NACK and buffer configuration
+        min_nack_queue = 500
+        nack_optimizations = true
+        max_nack_queue = 1000
+        
+        # SRTP configuration
+        rtp_port_range = "20000-40000"
+        dtls_mtu = 1200
+        
+        # Media handling
+        no_media_timer = 1
+        slowlink_threshold = 4
+        twcc_period = 100
+        
+        # Buffer and timing
+        rtp_buff_size = 262144
+        
+        # Video codec specific
+        vcodec = "h264"
+        h264_profile = "42e01f"  # Baseline profile
+        h264_level = "3.1"
+        
+        # RFC compliance
+        rfc_4588 = true
+        rfc_4961 = true
+        
+        # Timing and recovery
+        max_retransmissions = 10
+        retransmission_timeout = 100
+        
+        # Resource limits
+        max_payload_size = 1500
+        max_bandwidth = 1500000  # 1.5 Mbps
+    }
+
+    # NAT-related stuff: specifically, you can configure the STUN/TURN
+    # servers to use to gather candidates if the gateway is behind a NAT,
+    # and srflx/relay candidates are needed. In case STUN is not enough and
+    # this is needed (it shouldn't), you can also configure Janus to use a
+    # TURN server# please notice that this does NOT refer to TURN usage in
+    # browsers, but in the gathering of relay candidates by Janus itself,
+    # e.g., if you want to limit the ports used by a Janus instance on a
+    # private machine. Furthermore, you can choose whether Janus should be
+    # configured to do full-trickle (Janus also trickles its candidates to
+    # users) rather than the default half-trickle (Janus supports trickle
+    # candidates from users, but sends its own within the SDP), and whether
+    # it should work in ICE-Lite mode (by default it doesn't). If libnice is
+    # at least 0.1.15, you can choose which ICE nomination mode to use: valid
+    # values are "regular" and "aggressive" (the default depends on the libnice
+    # version itself; if we can set it, we set aggressive nomination). You can
+    # also configure whether to use connectivity checks as keep-alives, which
+    # might help detecting when a peer is no longer available (notice that
+    # current libnice master is breaking connections after 50 seconds when
+    # keepalive-conncheck is being used, so if you want to use it, better
+    # sticking to 0.1.18 until the issue is addressed upstream). Finally,
+    # you can also enable ICE-TCP support (beware that this may lead to problems
+    # if you do not enable ICE Lite as well), choose which interfaces should
+    # be used for gathering candidates, and enable or disable the
+    # internal libnice debugging, if needed.
+    nat: {
+        # Enable full ICE trickle for better mobile performance
+        full_trickle = true
+        
+        # Enable ICE-Lite for better mobile compatibility
+        ice_lite = true
+        
+        # Enable keepalive connection checks
+        ice_keepalive_conncheck = true
+        
+        # Use aggressive nomination for faster connections
+        ice_nomination = "aggressive"
+        
+        # Your existing TURN configuration
+        turn_server = "coturn-service.face-recognition-system.svc.cluster.local"
+        turn_port = 3478
+        turn_type = "udp"
+        turn_user = "admin"
+        turn_pwd = "admin"
+        
+        # Add STUN server as fallback
+        stun_server = "coturn-service.face-recognition-system.svc.cluster.local"
+        stun_port = 3478
+        
+        # Enable ICE-TCP for better mobile network traversal
+        ice_tcp = true
+    }
+
+    # You can choose which of the available plugins should be
+    # enabled or not. Use the 'disable' directive to prevent Janus from
+    # loading one or more plugins: use a comma separated list of plugin file
+    # names to identify the plugins to disable. By default all available
+    # plugins are enabled and loaded at startup.
+    plugins: {
+            #disable = "libjanus_echotest.so,libjanus_recordplay.so"
+    }
+
+    # You can choose which of the available transports should be enabled or
+    # not. Use the 'disable' directive to prevent Janus from loading one
+    # or more transport: use a comma separated list of transport file names
+    # to identify the transports to disable. By default all available
+    # transports are enabled and loaded at startup.
+    transports: {
+            #disable = "libjanus_rabbitmq.so"
+    }
+
+    # As a core feature, Janus can log either on the standard output, or to
+    # a local file. Should you need more advanced logging functionality, you
+    # can make use of one of the custom loggers, or write one yourself. Use the
+    # 'disable' directive to prevent Janus from loading one or more loggers:
+    # use a comma separated list of logger file names to identify the loggers
+    # to disable. By default all available loggers are enabled and loaded at startup.
+    loggers: {
+            #disable = "libjanus_jsonlog.so"
+    }
+
+    # Event handlers allow you to receive live events from Janus happening
+    # in core and/or plugins. Since this can require some more resources,
+    # the feature is disabled by default. Setting broadcast to yes will
+    # enable them. You can then choose which of the available event handlers
+    # should be loaded or not. Use the 'disable' directive to prevent Janus
+    # from loading one or more event handlers: use a comma separated list of
+    # file names to identify the event handlers to disable. By default, if
+    # broadcast is set to yes all available event handlers are enabled and
+    # loaded at startup. Finally, you can choose how often media statistics
+    # (packets sent/received, losses, etc.) should be sent: by default it's
+    # once per second (audio and video statistics sent separately), but may
+    # considered too verbose, or you may want to limit the number of events,
+    # especially if you have many PeerConnections active. To change this,
+    # just set 'stats_period' to the number of seconds that should pass in
+    # between statistics for each handle. Setting it to 0 disables them (but
+    # not other media-related events). By default Janus sends single media
+    # statistic events per media (audio, video and simulcast layers as separate
+    # events): if you'd rather receive a single containing all media stats in a
+    # single array, set 'combine_media_stats' to true.
+    events: {
+            #broadcast = true
+            #combine_media_stats = true
+            #disable = "libjanus_sampleevh.so"
+            #stats_period = 5
+    }
+    streaming: {
+        # General settings
+        general: {
+            debug_level = 4
+            admin_key = "adminkey"
+        }
+
+        # Codec settings
+        codecs: {
+            h264: {
+                profile = "42e01f"  # Baseline profile
+                level = "3.1"       # Common level
+                packetization_mode = 1
+            }
+            
+            # Fallback codecs
+            vp8: true
+            vp9: true
+        }
+
+        # RTP settings
+        rtp: {
+            audio_port_range = "10000-20000"
+            video_port_range = "20000-40000"
+            rtp_profile = "UDP/TLS/RTP/SAVPF"  # WebRTC profile
+        }
+
+        # Streaming settings
+        streaming: {
+            max_bandwidth = 1500000  # 1.5 Mbps
+            buffer_size = 262144
+            max_retries = 3
+            retry_wait = 1
+        }
+    }
+---
+#mediaMTX ConfigMap
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mediamtx-config
+  namespace: face-recognition-system
+  labels:
+    component: streaming
+    app: mediamtx
+data:
+  mediamtx.yml: |
+    logLevel: debug
+    logDestinations: [stdout]
+    logFile: mediamtx.log
+
+    readTimeout: 10s
+    writeTimeout: 10s
+    writeQueueSize: 512
+    udpMaxPayloadSize: 1472
+
+    runOnConnect:
+    runOnConnectRestart: no
+    runOnDisconnect:
+
+
+    authMethod: internal
+
+    authInternalUsers:
+    - user: any
+      pass:
+      ips: []
+      permissions:
+      - action: publish 
+        path:
+      - action: read
+        path:
+
+
+    - user: admin
+      pass: admin
+      ips: []
+      permissions:
+      - action: api
+
+
+    authHTTPAddress:
+    authHTTPExclude:
+    - action: metrics
+    - action: pprof
+
+    authJWTJWKS:
+    authJWTClaimKey: mediamtx_permissions
+
+
+    api: yes
+    apiAddress: :9997
+    apiEncryption: no
+    apiServerKey: server.key
+    apiServerCert: server.crt
+    apiAllowOrigin: '*'
+    apiTrustedProxies: []
+
+
+    metrics: no
+    metricsAddress: :9998
+    metricsEncryption: no
+    metricsServerKey: server.key
+    metricsServerCert: server.crt
+    metricsAllowOrigin: '*'
+    metricsTrustedProxies: []
+
+
+    pprof: no
+    pprofAddress: :9999
+    pprofEncryption: no
+    pprofServerKey: server.key
+    pprofServerCert: server.crt
+    pprofAllowOrigin: '*'
+    pprofTrustedProxies: []
+
+
+    playback: no
+    playbackAddress: :9996
+    playbackEncryption: no
+    playbackServerKey: server.key
+    playbackServerCert: server.crt
+    playbackAllowOrigin: '*'
+    playbackTrustedProxies: []
+
+
+    rtsp: yes
+    rtspTransports: [udp, multicast, tcp]
+    rtspEncryption: "no"
+    rtspAddress: :8554
+    rtspsAddress: :8322
+    rtpAddress: :8000
+    rtcpAddress: :8001
+    multicastIPRange: 224.1.0.0/16
+    multicastRTPPort: 8002
+    multicastRTCPPort: 8003
+    rtspAuthMethods: [basic]
+
+
+    rtmp: yes
+    rtmpAddress: :1935
+    rtmpEncryption: "no"
+    rtmpsAddress: :1936
+    rtmpServerKey: server.key
+    rtmpServerCert: server.crt
+
+
+    hls: yes
+    hlsAddress: :8888
+    hlsEncryption: no
+    hlsServerKey: server.key
+    hlsServerCert: server.crt
+    hlsAllowOrigin: '*'
+    hlsTrustedProxies: []
+    hlsAlwaysRemux: no
+    hlsVariant: lowLatency
+    hlsSegmentCount: 7
+    hlsSegmentDuration: 1s
+    hlsPartDuration: 200ms
+    hlsSegmentMaxSize: 50M
+    hlsDirectory: ''
+    hlsMuxerCloseAfter: 60s
+
+
+    webrtc: yes
+    webrtcAddress: :8889
+    webrtcEncryption: no
+    webrtcServerKey: server.key
+    webrtcServerCert: server.crt
+    webrtcAllowOrigin: '*'
+    webrtcTrustedProxies: []
+    webrtcLocalUDPAddress: :8189
+    webrtcLocalTCPAddress: ''
+    webrtcIPsFromInterfaces: yes
+    webrtcIPsFromInterfacesList: []
+    webrtcAdditionalHosts: []
+    webrtcICEServers2: []
+    webrtcHandshakeTimeout: 10s
+    webrtcTrackGatherTimeout: 2s
+
+
+    srt: yes
+    srtAddress: :8890
+
+
+    pathDefaults:
+
+
+      source: publisher
+      sourceFingerprint:
+      sourceOnDemand: no
+      sourceOnDemandStartTimeout: 10s
+      sourceOnDemandCloseAfter: 10s
+      maxReaders: 0
+      srtReadPassphrase:
+      fallback:
+
+
+      record: no
+      recordPath: ./recordings/%path/%Y-%m-%d_%H-%M-%S-%f
+      recordFormat: fmp4
+      recordPartDuration: 1s
+      recordSegmentDuration: 1h
+      recordDeleteAfter: 24h
+
+
+      overridePublisher: yes
+      srtPublishPassphrase:
+
+
+      rtspTransport: automatic
+      rtspAnyPort: no
+      rtspRangeType:
+      rtspRangeStart:
+
+
+      sourceRedirect:
+
+
+      rpiCameraCamID: 0
+      rpiCameraWidth: 1920
+      rpiCameraHeight: 1080
+      rpiCameraHFlip: false
+      rpiCameraVFlip: false
+      rpiCameraBrightness: 0
+      rpiCameraContrast: 1
+      rpiCameraSaturation: 1
+      rpiCameraSharpness: 1
+      rpiCameraExposure: normal
+      rpiCameraAWB: auto
+      rpiCameraAWBGains: [0, 0]
+      rpiCameraDenoise: "off"
+      rpiCameraShutter: 0
+      rpiCameraMetering: centre
+      rpiCameraGain: 0
+      rpiCameraEV: 0
+      rpiCameraROI:
+      rpiCameraHDR: false
+      rpiCameraTuningFile:
+      rpiCameraMode:
+      rpiCameraFPS: 30
+      rpiCameraAfMode: continuous
+      rpiCameraAfRange: normal
+      rpiCameraAfSpeed: normal
+      rpiCameraLensPosition: 0.0
+      rpiCameraAfWindow:
+      rpiCameraFlickerPeriod: 0
+      rpiCameraTextOverlayEnable: false
+      rpiCameraTextOverlay: '%Y-%m-%d %H:%M:%S - MediaMTX'
+      rpiCameraCodec: auto
+      rpiCameraIDRPeriod: 60
+      rpiCameraBitrate: 5000000
+      rpiCameraProfile: main
+      rpiCameraLevel: '4.1'
+
+
+      runOnInit:
+      runOnInitRestart: no
+
+      runOnDemand:
+      runOnDemandRestart: no
+      runOnDemandStartTimeout: 10s
+      runOnDemandCloseAfter: 10s
+      runOnUnDemand:
+
+      runOnReady:
+      runOnReadyRestart: no
+      runOnNotReady:
+
+      runOnRead:
+      runOnReadRestart: no
+      runOnUnread:
+
+      runOnRecordSegmentCreate:
+
+      runOnRecordSegmentComplete:
+    paths: {}
+      
+
+
+---
+
+
+#mediaMTX Deployment primary
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediamtx-primary
+  namespace: face-recognition-system
+  labels:
+    app: mediamtx
+    component: streaming
+    instance: primary
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mediamtx
+      instance: primary
+  template:
+    metadata:
+      labels:
+        app: mediamtx
+        component: streaming
+        instance: primary
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: bluedove2-ms-7b98
+      containers:
+      - name: mediamtx
+        image: bluenviron/mediamtx:latest
+        ports:
+        - containerPort: 8554
+          name: rtsp
+        - containerPort: 9997
+          name: api
+        - containerPort: 9998
+          name: metrics
+        env:
+        - name: MTX_RTSPADDRESS
+          value: ":8554"
+        - name: MTX_APIADDRESS
+          value: ":9997"
+        - name: MTX_INSTANCE
+          value: "primary"
+        - name: MTX_PROTOCOLS
+          value: "tcp"
+        - name: MTX_API
+          value: "yes"
+        - name: MTX_APIALLOWALL
+          value: "yes"
+        volumeMounts:
+        - name: mediamtx-config
+          mountPath: /mediamtx.yml
+          subPath: mediamtx.yml
+        resources:
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+          requests:
+            cpu: "1000m"
+            memory: "1Gi"
+        readinessProbe:
+          tcpSocket:
+            port: 8554
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 8554
+          initialDelaySeconds: 20
+          periodSeconds: 30
+      volumes:
+      - name: mediamtx-config
+        configMap:
+          name: mediamtx-config
+
+---
+#mediaMTX Deployment secondary
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: mediamtx-secondary
+#   namespace: face-recognition-system
+#   labels:
+#     app: mediamtx
+#     component: streaming
+#     instance: secondary
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mediamtx
+#       instance: secondary
+#   template:
+#     metadata:
+#       labels:
+#         app: mediamtx
+#         component: streaming
+#         instance: secondary
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98
+#       containers:
+#       - name: mediamtx
+#         image: bluenviron/mediamtx:latest
+#         ports:
+#         - containerPort: 8555
+#           name: rtsp
+#         - containerPort: 9998
+#           name: api
+#         - containerPort: 9999
+#           name: metrics
+#         env:
+#         - name: MTX_RTSPADDRESS
+#           value: ":8555"
+#         - name: MTX_APIADDRESS
+#           value: ":9998"
+#         - name: MTX_INSTANCE
+#           value: "secondary"
+#         - name: MTX_PROTOCOLS
+#           value: "tcp"
+#         - name: MTX_API
+#           value: "yes"
+#         - name: MTX_APIALLOWALL
+#           value: "yes"
+#         volumeMounts:
+#         - name: mediamtx-config
+#           mountPath: /mediamtx.yml
+#           subPath: mediamtx.yml
+#         resources:
+#           limits:
+#             cpu: "1500m"
+#             memory: "1Gi"
+#           requests:
+#             cpu: "500m"
+#             memory: "512Mi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 8555
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 8555
+#           initialDelaySeconds: 20
+#           periodSeconds: 30
+#       volumes:
+#       - name: mediamtx-config
+#         configMap:
+#           name: mediamtx-config
+
+---
+#mediaMTX dep normal
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mediamtx-normal
+  namespace: face-recognition-system
+  labels:
+    app: mediamtx-normal
+    component: streaming
+    instance: normal
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mediamtx-normal
+      instance: normal
+  template:
+    metadata:
+      labels:
+        app: mediamtx-normal
+        component: streaming
+        instance: normal
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: bluedove2-ms-7b98
+      containers:
+      - name: mediamtx
+        image: bluenviron/mediamtx:latest
+        ports:
+        - containerPort: 8554
+          name: rtsp
+        - containerPort: 9997
+          name: api
+        - containerPort: 9998
+          name: metrics
+        env:
+        - name: MTX_RTSPADDRESS
+          value: ":8554"
+        - name: MTX_APIADDRESS
+          value: ":9997"
+        - name: MTX_INSTANCE
+          value: "normal"
+        - name: MTX_RTSPTRANSPORTS
+          value: "tcp"
+        - name: MTX_API
+          value: "yes"
+        - name: MTX_APIALLOWALL
+          value: "yes"
+        - name: MTX_PATHS_ALL_DISABLEPUBLISHERTIMEOUT
+          value: "yes"
+        - name: MTX_PATHS_ALL_DISABLEREADERTIMEOUT
+          value: "yes"
+        volumeMounts:
+        - name: mediamtx-config
+          mountPath: /mediamtx.yml
+          subPath: mediamtx.yml
+        resources:
+          limits:
+            cpu: "1500m"
+            memory: "1Gi"
+          requests:
+            cpu: "500m"
+            memory: "512Mi"
+        readinessProbe:
+          tcpSocket:
+            port: 8554
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        livenessProbe:
+          tcpSocket:
+            port: 8554
+          initialDelaySeconds: 20
+          periodSeconds: 30
+      volumes:
+      - name: mediamtx-config
+        configMap:
+          name: mediamtx-config
+
+---
+#mediaMTX Services pimary 
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-primary-service
+  namespace: face-recognition-system
+  labels:
+    component: streaming
+spec:
+  selector:
+    app: mediamtx
+    instance: primary
+  ports:
+  - protocol: TCP
+    port: 8554
+    targetPort: 8554
+    name: rtsp
+  - protocol: TCP
+    port: 9997
+    targetPort: 9997
+    name: api
+  - protocol: TCP
+    port: 9998
+    targetPort: 9998
+    name: metrics
+  type: ClusterIP
+
+---
+#mediaMTX Services secondary
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-secondary-service
+  namespace: face-recognition-system
+  labels:
+    component: streaming
+spec:
+  selector:
+    app: mediamtx
+    instance: secondary
+  ports:
+  - protocol: TCP
+    port: 8555
+    targetPort: 8555
+    name: rtsp
+  - protocol: TCP
+    port: 9998
+    targetPort: 9998
+    name: api
+  - protocol: TCP
+    port: 9999
+    targetPort: 9999
+    name: metrics
+  type: ClusterIP
+
+---
+#mediaMTX Services normal
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-normal-service
+  namespace: face-recognition-system
+  labels:
+    component: streaming
+spec:
+  selector:
+    app: mediamtx-normal
+    instance: normal
+  ports:
+  - protocol: TCP
+    port: 8554
+    targetPort: 8554
+    name: rtsp
+  - protocol: TCP
+    port: 9997
+    targetPort: 9997
+    name: api
+  - protocol: TCP
+    port: 9998
+    targetPort: 9998
+    name: metrics
+  type: ClusterIP
+
+---
+#mediaMTX Services external
+apiVersion: v1
+kind: Service
+metadata:
+  name: mediamtx-external-service
+  namespace: face-recognition-system
+  labels:
+    component: streaming
+spec:
+  selector:
+    app: mediamtx-normal
+    instance: normal
+  ports:
+  - protocol: TCP
+    port: 8554
+    targetPort: 8554
+    nodePort: 30554
+    name: rtsp-external
+  type: NodePort
+
+
+
+---
+# Janus Gateway - Worker Node (host network mode)
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: janus-gateway
+  namespace: face-recognition-system
+  labels:
+    app: janus-gateway
+    component: signaling
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: janus-gateway
+  template:
+    metadata:
+      labels:
+        app: janus-gateway
+        component: signaling
+    spec:
+      nodeSelector:
+        kubernetes.io/hostname: bluedove2-ms-7b98  # Worker node
+      # hostNetwork: true  # Equivalent to network_mode: "host"
+      containers:
+      - name: janus
+        image: canyan/janus-gateway:master
+        ports:
+        - containerPort: 8088
+        - containerPort: 8188  # WebSocket port
+        env:
+        - name: JANUS_CONFIG_DIR
+          value: "/opt/janus/etc/janus"
+        volumeMounts:
+        - name: janus-config
+          mountPath: /usr/local/etc/janus/janus.jcfg
+          subPath: janus.jcfg
+          readOnly: true
+        resources:
+          limits:
+            cpu: "2000m"
+            memory: "2Gi"
+          requests:
+            cpu: "1000m"
+            memory: "1Gi"
+        readinessProbe:
+          httpGet:
+            path: /janus/info
+            port: 8088
+          initialDelaySeconds: 40
+          periodSeconds: 30
+        livenessProbe:
+          httpGet:
+            path: /janus/info
+            port: 8088
+          initialDelaySeconds: 60
+          periodSeconds: 30
+      volumes:
+      - name: janus-config
+        configMap:
+          name: janus-config
+          defaultMode: 0644
+
+
+---
+#janus Service (for external access)
+apiVersion: v1
+kind: Service
+metadata:
+  name: janus-service
+  namespace: face-recognition-system
+  labels:
+    component: signaling
+spec:
+  selector:
+    app: janus-gateway
+  ports:
+  - protocol: TCP
+    port: 8088
+    targetPort: 8088
+    nodePort: 30088
+    name: janus-http
+  - protocol: TCP
+    port: 8188
+    targetPort: 8188
+    nodePort: 30188
+    name: janus-ws
+  type: NodePort
+
+---
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#---------------------------------------------------------------------------------------------
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: mediamtx-primary
+#   namespace: face-recognition-system
+#   labels:
+#     app: mediamtx
+#     component: streaming
+#     instance: primary
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mediamtx
+#       instance: primary
+#   template:
+#     metadata:
+#       labels:
+#         app: mediamtx
+#         component: streaming
+#         instance: primary
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       containers:
+#       - name: mediamtx
+#         image: bluenviron/mediamtx:latest
+#         ports:
+#         - containerPort: 8554  # RTSP port
+#         - containerPort: 9997  # API port
+#         env:
+#         - name: MTX_RTSPADDRESS
+#           value: ":8554"
+#         - name: MTX_APIADDRESS
+#           value: ":9997"
+#         - name: MTX_INSTANCE
+#           value: "primary"
+#         - name: MTX_PROTOCOLS
+#           value: "tcp"
+#         - name: MTX_API
+#           value: "yes"
+#         resources:
+#           limits:
+#             cpu: "2000m"
+#             memory: "2Gi"
+#           requests:
+#             cpu: "1000m"
+#             memory: "1Gi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 8554
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 8554
+#           initialDelaySeconds: 20
+#           periodSeconds: 30
+
+---
+# MediaMTX Secondary - Worker Node (port 8555 + API 9998)
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: mediamtx-secondary
+#   namespace: face-recognition-system
+#   labels:
+#     app: mediamtx
+#     component: streaming
+#     instance: secondary
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mediamtx
+#       instance: secondary
+#   template:
+#     metadata:
+#       labels:
+#         app: mediamtx
+#         component: streaming
+#         instance: secondary
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       containers:
+#       - name: mediamtx
+#         image: bluenviron/mediamtx:latest
+#         ports:
+#         - containerPort: 8555  # RTSP port
+#         - containerPort: 9998  # API port
+#         env:
+#         - name: MTX_RTSPADDRESS
+#           value: ":8555"
+#         - name: MTX_APIADDRESS
+#           value: ":9998"
+#         - name: MTX_INSTANCE
+#           value: "secondary"
+#         - name: MTX_PROTOCOLS
+#           value: "tcp"
+#         - name: MTX_API
+#           value: "yes"
+#         resources:
+#           limits:
+#             cpu: "1500m"
+#             memory: "1Gi"
+#           requests:
+#             cpu: "500m"
+#             memory: "512Mi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 8555
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 8555
+#           initialDelaySeconds: 20
+#           periodSeconds: 30
+
+---
+# MediaMTX Normal Stream - Worker Node (port 8556 + API 9999) - MAIN ONE FOR JANUS
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: mediamtx-normal
+#   namespace: face-recognition-system
+#   labels:
+#     app: mediamtx-normal  # Changed to match your Janus API code
+#     component: streaming
+#     instance: normal
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mediamtx-normal
+#       instance: normal
+#   template:
+#     metadata:
+#       labels:
+#         app: mediamtx-normal  # Changed to match service selector
+#         component: streaming
+#         instance: normal
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       containers:
+#       - name: mediamtx
+#         image: bluenviron/mediamtx:latest
+#         ports:
+#         - containerPort: 8556  # RTSP port
+#         - containerPort: 9997  # API port - different from other instances
+#         env:
+#         - name: MTX_RTSPADDRESS
+#           value: ":8556"
+#         - name: MTX_APIADDRESS
+#           value: ":9997"
+#         - name: MTX_INSTANCE
+#           value: "normal"
+#         - name: MTX_PROTOCOLS
+#           value: "tcp"
+#         - name: MTX_API
+#           value: "yes"
+#         - name: MTX_APIALLOWALL
+#           value: "yes"
+#         resources:
+#           limits:
+#             cpu: "1500m"
+#             memory: "1Gi"
+#           requests:
+#             cpu: "500m"
+#             memory: "512Mi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 8556
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 8556
+#           initialDelaySeconds: 20
+#           periodSeconds: 30
+
+
+# ---
+# # MediaMTX Services - REQUIRED for Janus integration
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mediamtx-primary-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: streaming
+# spec:
+#   selector:
+#     app: mediamtx
+#     instance: primary
+#   ports:
+#   - protocol: TCP
+#     port: 8554
+#     targetPort: 8554
+#     name: rtsp
+#   - protocol: TCP
+#     port: 9997
+#     targetPort: 9997
+#     name: api
+#   type: ClusterIP
+
+# ---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mediamtx-secondary-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: streaming
+# spec:
+#   selector:
+#     app: mediamtx
+#     instance: secondary
+#   ports:
+#   - protocol: TCP
+#     port: 8555
+#     targetPort: 8555
+#     name: rtsp
+#   - protocol: TCP
+#     port: 9998
+#     targetPort: 9998
+#     name: api
+#   type: ClusterIP
+
+# ---
+# # MAIN MediaMTX service for Janus integration
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mediamtx-normal-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: streaming
+# spec:
+#   selector:
+#     app: mediamtx-normal  # Must match the deployment label
+#     instance: normal
+#   ports:
+#   - protocol: TCP
+#     port: 8554
+#     targetPort: 8556  # Maps to container port 8556
+#     name: rtsp
+#   - protocol: TCP
+#     port: 9997
+#     targetPort: 9997  # Maps to container port 9999 (API)
+#     name: api
+#   type: ClusterIP
+
+---
+# External MediaMTX NodePort services for testing
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mediamtx-external-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: streaming
+# spec:
+#   selector:
+#     app: mediamtx-normal
+#     instance: normal
+#   ports:
+#   - protocol: TCP
+#     port: 8554
+#     targetPort: 8556
+#     nodePort: 30554
+#     name: rtsp-external
+#   type: NodePort
+
+# ---
+# Janus Service (for internal access)
+
+
+# # 05-streaming-services.yaml
+# # MediaMTX, Janus, and COTURN Services - Fixed Ports
+
+# # MediaMTX Primary - Worker Node (port 8554)
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: mediamtx-primary
+#   namespace: face-recognition-system
+#   labels:
+#     app: mediamtx
+#     component: streaming
+#     instance: primary
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mediamtx
+#       instance: primary
+#   template:
+#     metadata:
+#       labels:
+#         app: mediamtx
+#         component: streaming
+#         instance: primary
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       containers:
+#       - name: mediamtx
+#         image: bluenviron/mediamtx:latest
+#         ports:
+#         - containerPort: 8554  # Primary uses standard port 8554
+#         env:
+#         - name: MTX_RTSPADDRESS
+#           value: ":8554"
+#         - name: MTX_INSTANCE
+#           value: "primary"
+#         - name: MTX_PROTOCOLS
+#           value: "tcp"
+#         resources:
+#           limits:
+#             cpu: "2000m"
+#             memory: "2Gi"
+#           requests:
+#             cpu: "1000m"
+#             memory: "1Gi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 8554
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 8554
+#           initialDelaySeconds: 20
+#           periodSeconds: 30
+
+# ---
+# # MediaMTX Secondary - Worker Node (port 8555)
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: mediamtx-secondary
+#   namespace: face-recognition-system
+#   labels:
+#     app: mediamtx
+#     component: streaming
+#     instance: secondary
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mediamtx
+#       instance: secondary
+#   template:
+#     metadata:
+#       labels:
+#         app: mediamtx
+#         component: streaming
+#         instance: secondary
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       containers:
+#       - name: mediamtx
+#         image: bluenviron/mediamtx:latest
+#         ports:
+#         - containerPort: 8555  # Secondary uses port 8555
+#         env:
+#         - name: MTX_RTSPADDRESS
+#           value: ":8555"
+#         - name: MTX_INSTANCE
+#           value: "secondary"
+#         - name: MTX_PROTOCOLS
+#           value: "tcp"
+#         resources:
+#           limits:
+#             cpu: "1500m"
+#             memory: "1Gi"
+#           requests:
+#             cpu: "500m"
+#             memory: "512Mi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 8555
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 8555
+#           initialDelaySeconds: 20
+#           periodSeconds: 30
+
+# ---
+# # MediaMTX Normal Stream - Worker Node (port 8556)
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: mediamtx-normal
+#   namespace: face-recognition-system
+#   labels:
+#     app: mediamtx
+#     component: streaming
+#     instance: normal
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: mediamtx
+#       instance: normal
+#   template:
+#     metadata:
+#       labels:
+#         app: mediamtx
+#         component: streaming
+#         instance: normal
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       containers:
+#       - name: mediamtx
+#         image: bluenviron/mediamtx:latest
+#         ports:
+#         - containerPort: 8556  # Normal uses port 8556
+#         env:
+#         - name: MTX_RTSPADDRESS
+#           value: ":8556"
+#         - name: MTX_INSTANCE
+#           value: "normal"
+#         - name: MTX_PROTOCOLS
+#           value: "tcp"
+#         resources:
+#           limits:
+#             cpu: "1500m"
+#             memory: "1Gi"
+#           requests:
+#             cpu: "500m"
+#             memory: "512Mi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 8556
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 8556
+#           initialDelaySeconds: 20
+#           periodSeconds: 30
+
+# ---
+# # Janus Gateway - Worker Node (host network mode)
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: janus-gateway
+#   namespace: face-recognition-system
+#   labels:
+#     app: janus-gateway
+#     component: signaling
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: janus-gateway
+#   template:
+#     metadata:
+#       labels:
+#         app: janus-gateway
+#         component: signaling
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       hostNetwork: true  # Equivalent to network_mode: "host"
+#       containers:
+#       - name: janus
+#         image: canyan/janus-gateway:master
+#         ports:
+#         - containerPort: 8088
+#         env:
+#         - name: JANUS_CONFIG_DIR
+#           value: "/opt/janus/etc/janus"
+#         resources:
+#           limits:
+#             cpu: "2000m"
+#             memory: "2Gi"
+#           requests:
+#             cpu: "1000m"
+#             memory: "1Gi"
+#         readinessProbe:
+#           httpGet:
+#             path: /janus/info
+#             port: 8088
+#           initialDelaySeconds: 40
+#           periodSeconds: 30
+#         livenessProbe:
+#           httpGet:
+#             path: /janus/info
+#             port: 8088
+#           initialDelaySeconds: 60
+#           periodSeconds: 30
+
+# ---
+# # COTURN Server - Worker Node (host network with expanded ports)
+# apiVersion: apps/v1
+# kind: Deployment
+# metadata:
+#   name: coturn-server
+#   namespace: face-recognition-system
+#   labels:
+#     app: coturn
+#     component: networking
+# spec:
+#   replicas: 1
+#   selector:
+#     matchLabels:
+#       app: coturn
+#   template:
+#     metadata:
+#       labels:
+#         app: coturn
+#         component: networking
+#     spec:
+#       nodeSelector:
+#         kubernetes.io/hostname: bluedove-ms-7b98  # Worker node
+#       hostNetwork: true  # Equivalent to network_mode: "host"
+#       containers:
+#       - name: coturn
+#         image: coturn/coturn:latest
+#         env:
+#         - name: TZ
+#           value: "UTC"
+#         - name: EXTERNAL_IP
+#           value: "34.60.157.241"  # Your stream IP
+#         - name: LISTENING_PORT
+#           value: "3478"
+#         - name: TLS_LISTENING_PORT
+#           value: "5349"
+#         - name: RELAY_IP
+#           value: "34.60.157.241"
+#         command:
+#         - turnserver
+#         - --listening-port=3478
+#         - --tls-listening-port=5349
+#         - --min-port=10000
+#         - --max-port=20000
+#         - --verbose
+#         - --fingerprint
+#         - --lt-cred-mech
+#         - --realm=face-recognition
+#         - --external-ip=34.60.157.241
+#         ports:
+#         - containerPort: 3478
+#           protocol: TCP
+#         - containerPort: 3478
+#           protocol: UDP
+#         - containerPort: 5349
+#           protocol: TCP
+#         - containerPort: 5349
+#           protocol: UDP
+#         resources:
+#           limits:
+#             cpu: "1000m"
+#             memory: "1Gi"
+#           requests:
+#             cpu: "500m"
+#             memory: "512Mi"
+#         readinessProbe:
+#           tcpSocket:
+#             port: 3478
+#           initialDelaySeconds: 10
+#           periodSeconds: 10
+#         livenessProbe:
+#           tcpSocket:
+#             port: 3478
+#           initialDelaySeconds: 30
+#           periodSeconds: 30
+
+# ---
+# # Additional Janus Service (for external access)
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: janus-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: signaling
+# spec:
+#   selector:
+#     app: janus-gateway
+#   ports:
+#   - protocol: TCP
+#     port: 8088
+#     targetPort: 8088
+#     nodePort: 30088
+#     name: janus-http
+#   type: NodePort
+
+# ---
+# # Additional COTURN Service (for external access)
+# # apiVersion: v1
+# # kind: Service
+# # metadata:
+# #   name: coturn-service
+# #   namespace: face-recognition-system
+# #   labels:
+# #     component: networking
+# # spec:
+# #   selector:
+# #     app: coturn
+# #   ports:
+# #   - protocol: TCP
+# #     port: 3478
+# #     targetPort: 3478
+# #     nodePort: 30478
+# #     name: coturn-tcp
+# #   - protocol: UDP
+# #     port: 3478
+# #     targetPort: 3478
+# #     nodePort: 30478
+# #     name: coturn-udp
+# #   - protocol: TCP
+# #     port: 5349
+# #     targetPort: 5349
+# #     nodePort: 30349
+# #     name: coturn-tls-tcp
+# #   - protocol: UDP
+# #     port: 5349
+# #     targetPort: 5349
+# #     nodePort: 30349
+# #     name: coturn-tls-udp
+# #   type: NodePort

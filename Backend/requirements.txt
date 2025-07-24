@@ -1,0 +1,120 @@
+setuptools
+protobuf
+asgiref==3.7.2
+cffi==1.16.0
+cryptography==41.0.7
+Django==5.0.1
+django-cors-headers==4.3.1
+django-filter==23.5
+djangorestframework==3.14.0
+djangorestframework-simplejwt==5.3.1
+environs==10.0.0
+marshmallow==3.20.1
+packaging==23.2
+pillow==10.2.0
+psycopg==3.1.16
+pycparser==2.21
+PyJWT==2.8.0
+python-dotenv==1.0.0
+pytz==2023.3.post1
+sqlparse==0.4.4
+typing_extensions==4.9.0
+channels[daphne]==4.0.0
+requests
+pafy
+psycopg2-binary
+opencv-python==4.11.0.86
+opencv-fixer
+progress
+redis
+tzdata
+channels_redis
+ffmpeg-python
+celery==5.4.0
+# face_recognition
+
+
+
+# ultralytics requirements
+# Ultralytics requirements
+# Usage: pip install -r requirements.txt
+
+# Base ----------------------------------------
+hydra-core>=1.2.0
+matplotlib>=3.2.2
+numpy>=1.18.5
+Pillow>=7.1.2
+PyYAML>=5.3.1
+requests>=2.23.0
+scipy>=1.4.1
+torch>=1.7.0
+torchvision>=0.8.1
+tqdm>=4.64.0
+
+easydict
+websockets
+# Logging -------------------------------------
+tensorboard>=2.4.1
+# clearml
+# comet
+
+# Plotting ------------------------------------
+pandas>=1.1.4
+seaborn>=0.11.0
+
+# Export --------------------------------------
+# coremltools>=6.0  # CoreML export
+# onnx>=1.12.0  # ONNX export
+# onnx-simplifier>=0.4.1  # ONNX simplifier
+# nvidia-pyindex  # TensorRT export
+# nvidia-tensorrt  # TensorRT export
+# scikit-learn==0.19.2  # CoreML quantization
+# tensorflow>=2.4.1  # TF exports (-cpu, -aarch64, -macos)
+# tensorflowjs>=3.9.0  # TF.js export
+# openvino-dev  # OpenVINO export
+
+# Extras --------------------------------------
+ipython  # interactive notebook
+psutil  # system utilization
+thop>=0.1.1  # FLOPs computation
+# albumentations>=1.0.3
+# pycocotools>=2.0.6  # COCO mAP
+# roboflow
+
+# HUB -----------------------------------------
+GitPython>=3.1.24
+
+
+schedule
+
+antlr4-python3-runtime==4.9.3
+certifi==2025.1.31
+charset-normalizer==3.4.1
+contourpy==1.3.1
+cycler==0.12.1
+filelock==3.17.0
+fonttools==4.56.0
+fsspec==2025.2.0
+idna==3.10
+Jinja2==3.1.6
+kiwisolver==1.4.8
+lap==0.5.12
+MarkupSafe==3.0.2
+matplotlib==3.10.1
+mpmath==1.3.0
+networkx==3.4.2
+numpy==1.26.4
+omegaconf==2.3.0
+opencv-contrib-python==4.8.0.76
+
+
+
+py-cpuinfo==9.0.0
+pyparsing==3.2.1
+python-dateutil==2.9.0.post0
+pytubefix==8.12.2
+ultralytics==8.3.84
+ultralytics-thop==2.0.14
+urllib3==2.3.0
+
+shapely

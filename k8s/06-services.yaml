@@ -1,0 +1,329 @@
+# 06-services.yaml
+# All Kubernetes Services - Refactored Naming
+
+# Django Backend GPU Services (Individual GPU endpoints)
+---
+
+# GPU0 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: django-backend-gpu-0-service
+  namespace: face-recognition-system
+  labels:
+    app: django-backend
+    gpu-id: "gpu0"
+    component: backend
+spec:
+  selector:
+    app: django-backend
+    gpu-id: "gpu0"
+  ports:
+  - name: http
+    protocol: TCP
+    port: 9898
+    targetPort: 9898
+  - name: tensorboard
+    protocol: TCP
+    port: 6006
+    targetPort: 6006
+  - name: jupyter
+    protocol: TCP
+    port: 8888
+    targetPort: 8888
+  type: ClusterIP
+---
+# GPU1 Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: django-backend-gpu-1-service
+  namespace: face-recognition-system
+  labels:
+    app: django-backend
+    gpu-id: "gpu1"
+    component: backend
+spec:
+  selector:
+    app: django-backend
+    gpu-id: "gpu1"
+  ports:
+  - name: http
+    protocol: TCP
+    port: 9898
+    targetPort: 9898
+  - name: tensorboard
+    protocol: TCP
+    port: 6006
+    targetPort: 6006
+  - name: jupyter
+    protocol: TCP
+    port: 8888
+    targetPort: 8888
+  type: ClusterIP
+
+---
+# Main Backend Load Balancer (Discovery and Health Checks)
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-loadbalancer-service
+  namespace: face-recognition-system
+  labels:
+    service-type: "discovery-loadbalancer"
+spec:
+  selector:
+    app: django-backend
+  ports:
+  - protocol: TCP
+    port: 9898
+    targetPort: 9898
+    name: http
+  type: ClusterIP
+
+---
+# Frontend Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: face-recognition-system
+  labels:
+    component: frontend
+spec:
+  selector:
+    app: react-frontend
+  ports:
+  - protocol: TCP
+    port: 9999
+    targetPort: 9999
+    name: http
+  type: ClusterIP
+
+---
+# MediaMTX Services (Fixed port conflicts)
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mediamtx-primary-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: streaming
+#     instance: primary
+# spec:
+#   selector:
+#     app: mediamtx
+#     instance: primary
+#   ports:
+#   - protocol: TCP
+#     port: 8554
+#     targetPort: 8554  # Primary uses port 8554
+#     name: rtsp
+#   type: ClusterIP
+
+---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mediamtx-secondary-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: streaming
+#     instance: secondary
+# spec:
+#   selector:
+#     app: mediamtx
+#     instance: secondary
+#   ports:
+#   - protocol: TCP
+#     port: 8554
+#     targetPort: 8555  # Secondary uses port 8555 internally
+#     name: rtsp
+#   type: ClusterIP
+
+---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: mediamtx-normal-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: streaming
+#     instance: normal
+# spec:
+#   selector:
+#     app: mediamtx
+#     instance: normal
+#   ports:
+#   - protocol: TCP
+#     port: 8554
+#     targetPort: 8556  # Normal uses port 8556 internally
+#     name: rtsp
+#   type: ClusterIP
+
+---
+# TensorBoard Services for GPU Monitoring
+apiVersion: v1
+kind: Service
+metadata:
+  name: tensorboard-gpu0-service
+  namespace: face-recognition-system
+  labels:
+    component: monitoring
+    gpu-id: "0"
+spec:
+  selector:
+    app: django-backend
+    gpu-id: "0"
+  ports:
+  - protocol: TCP
+    port: 6006
+    targetPort: 6006
+    name: tensorboard
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: tensorboard-gpu1-service
+  namespace: face-recognition-system
+  labels:
+    component: monitoring
+    gpu-id: "1"
+spec:
+  selector:
+    app: django-backend
+    gpu-id: "1"
+  ports:
+  - protocol: TCP
+    port: 6006
+    targetPort: 6006
+    name: tensorboard
+  type: ClusterIP
+
+---
+# Jupyter Services for GPU0 and GPU1
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter-gpu0-service
+  namespace: face-recognition-system
+  labels:
+    component: development
+    gpu-id: "0"
+spec:
+  selector:
+    app: django-backend
+    gpu-id: "0"
+  ports:
+  - protocol: TCP
+    port: 8888
+    targetPort: 8888
+    name: jupyter
+  type: ClusterIP
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jupyter-gpu1-service
+  namespace: face-recognition-system
+  labels:
+    component: development
+    gpu-id: "1"
+spec:
+  selector:
+    app: django-backend
+    gpu-id: "1"
+  ports:
+  - protocol: TCP
+    port: 8888
+    targetPort: 8888
+    name: jupyter
+  type: ClusterIP
+
+---
+# Celery Monitor Service (Flower)
+apiVersion: v1
+kind: Service
+metadata:
+  name: celery-monitor-service
+  namespace: face-recognition-system
+  labels:
+    component: monitoring
+spec:
+  selector:
+    app: celery-worker
+  ports:
+  - protocol: TCP
+    port: 5555
+    targetPort: 5555
+    name: flower
+  type: ClusterIP
+
+---
+# Internal Database Services (ClusterIP - Secure)
+# (postgres-service definition removed; now in 03-database-redis.yaml)
+
+---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: redis-primary-service
+#   namespace: face-recognition-system
+#   labels:
+#     component: cache
+#     instance: primary
+# spec:
+#   selector:
+#     app: redis-primary
+#   ports:
+#   - protocol: TCP
+#     port: 6379
+#     targetPort: 6379
+#     name: redis
+#   type: ClusterIP
+
+---
+# apiVersion: v1
+# kind: Service
+# metadata:
+#   name: redis-channels-service
+#   namespace: face-recognition-system
+#   labels:
+#     app: redis-channels
+#     component: cache
+# spec:
+#   selector:
+#     app: redis-channels
+#   ports:
+#   - protocol: TCP
+#     port: 6380
+#     targetPort: 6380
+#     name: redis-channels
+#   type: ClusterIP
+
+---
+# External Database Access (Only for Development/Admin - Remove in Production)
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-external-service
+  namespace: face-recognition-system
+  labels:
+    component: database
+    access-type: external
+  annotations:
+    kubernetes.io/description: "External PostgreSQL access - Remove in production"
+spec:
+  selector:
+    app: postgresql
+  ports:
+  - protocol: TCP
+    port: 5432
+    targetPort: 5432
+    name: postgres-external
+  type: ClusterIP
+
+---

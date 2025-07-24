@@ -1,0 +1,188 @@
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facerec-gpu-ingress
+  namespace: face-recognition-system
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Rewrite /gpu0/api/... to /api/... and /gpu1/api/... to /api/...
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: facerec.local
+      http:
+        paths:
+          # GPU0 routes - captures /gpu0/ and removes it
+          # /gpu0/api/peoplecounting/addStreamCounting/ -> /api/peoplecounting/addStreamCounting/
+          - pathType: ImplementationSpecific
+            path: /gpu0(/|$)(.*)
+            backend:
+              service:
+                name: django-backend-gpu-0-service
+                port:
+                  number: 9898
+          
+          # GPU1 routes - captures /gpu1/ and removes it  
+          # /gpu1/api/peoplecounting/addStreamCounting/ -> /api/peoplecounting/addStreamCounting/
+          - pathType: ImplementationSpecific
+            path: /gpu1(/|$)(.*)
+            backend:
+              service:
+                name: django-backend-gpu-1-service
+                port:
+                  number: 9898
+
+---
+# Janus WebRTC Gateway ingress - Simplified without ConfigMap
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facerec-janus-ingress
+  namespace: face-recognition-system
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Basic WebSocket support for Janus
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/upstream-hash-by: "$remote_addr"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: facerec.local
+      http:
+        paths:
+          # Janus gateway routing - handles both HTTP and WebSocket
+          - pathType: Prefix
+            path: /janus
+            backend:
+              service:
+                name: janus-service
+                port:
+                  number: 8088
+
+---
+# Backend API ingress (no rewrite) - for non-GPU requests
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facerec-backend-ingress
+  namespace: face-recognition-system
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: facerec.local
+      http:
+        paths:
+          # Backend API routes (for general API calls that don't need specific GPU)
+          - pathType: Prefix
+            path: /admin
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /api
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /overview
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /peoplecounting
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /faceanalyzer
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /database
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          
+          # WebSocket routes
+          - pathType: Prefix
+            path: /wsStat
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /ws
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /wsStatus
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /wsNotification
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+
+---
+# Frontend ingress (catch-all) - LOWEST PRIORITY
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: facerec-frontend-ingress
+  namespace: face-recognition-system
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "100m"
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: facerec.local
+      http:
+        paths:
+          # Frontend - catch-all for everything else
+          - pathType: Prefix
+            path: /
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 9999

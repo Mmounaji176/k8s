@@ -1,0 +1,4 @@
+FROM mher/flower
+
+CMD ["celery", "--broker=redis://default:admin@redis:6379/11", "flower", "--port=5555"]
+

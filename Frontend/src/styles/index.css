@@ -1,0 +1,11 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.gradient-border-rounded {
+  border-width: 3px;
+  border-style: solid;
+  border-image: linear-gradient(to right, #ff7e5f, #feb47b);
+  border-image-slice: 1;
+  border-radius: 9999px; /* Use a large value to create a round border */
+}
