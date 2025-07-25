@@ -675,8 +675,10 @@ data:
 
     authHTTPAddress:
     authHTTPExclude:
+    - action: api
     - action: metrics
     - action: pprof
+
 
     authJWTJWKS:
     authJWTClaimKey: mediamtx_permissions
@@ -868,7 +870,9 @@ data:
       runOnRecordSegmentCreate:
 
       runOnRecordSegmentComplete:
-    paths: {}
+    paths:
+      all:
+        rtspTransport: tcp
       
 
 
@@ -1060,23 +1064,7 @@ spec:
           name: api
         - containerPort: 9998
           name: metrics
-        env:
-        - name: MTX_RTSPADDRESS
-          value: ":8554"
-        - name: MTX_APIADDRESS
-          value: ":9997"
-        - name: MTX_INSTANCE
-          value: "normal"
-        - name: MTX_RTSPTRANSPORTS
-          value: "tcp"
-        - name: MTX_API
-          value: "yes"
-        - name: MTX_APIALLOWALL
-          value: "yes"
-        - name: MTX_PATHS_ALL_DISABLEPUBLISHERTIMEOUT
-          value: "yes"
-        - name: MTX_PATHS_ALL_DISABLEREADERTIMEOUT
-          value: "yes"
+     
         volumeMounts:
         - name: mediamtx-config
           mountPath: /mediamtx.yml
@@ -1084,7 +1072,7 @@ spec:
         resources:
           limits:
             cpu: "1500m"
-            memory: "1Gi"
+            memory: "2Gi"
           requests:
             cpu: "500m"
             memory: "512Mi"

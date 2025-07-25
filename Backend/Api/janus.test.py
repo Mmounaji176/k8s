@@ -149,14 +149,15 @@ def main_api(stream_id, webrtc_stream_id, local_stream_url):
         body = {         
             "name": f"test",
             "source": f"{encode_rtsp_url(local_stream_url)}",
-            "sourceOnDemand": True,
+            "sourceOnDemand": False,
             # "readUser": "admin",
             # "readPass": "admin"
         }
         mediamtx_response = requests.post(MEDIAMTX_API_URL_REQUEST, json=body)
         print(f"MediaMTX response status: {mediamtx_response.status_code}")
         print(f"MediaMTX response body: {mediamtx_response.text}")  
-
+        import time
+        time.sleep(2)  # Wait for MediaMTX to process the request
        
         # print(f"----------------MediaMTX response: {mediamtx_response}")
         new_url = f'rtsp:/mediamtx-normal-service:8554/live/{stream_id}'
@@ -178,7 +179,7 @@ if __name__ == "__main__":
     integer_randon = random.randint(10, 9999)
     stream_id = integer_randon
     webrtc_stream_id = integer_randon + 1
-    local_stream_url = "rtsp://10.24.33.13:5555/live/999"
+    local_stream_url = "rtsp://rtspstream:-DUukhoj1siJCg0jsyN4T@zephyr.rtsp.stream/movie"
     
     # Create stream
     main_api(stream_id, webrtc_stream_id, local_stream_url)
