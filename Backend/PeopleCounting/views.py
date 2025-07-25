@@ -148,13 +148,13 @@ def PostStream(request):
                 try:
                     # FIXED: Use simpler WebRTC stream ID calculation
                     # Instead of subtracting from max int, use a simple offset
-                    webrtc_stream_id = instance.id + 10000  # Simple offset to avoid conflicts
+                    webrtc_stream_id = 2147483647 - instance.id  # Simple offset to avoid conflicts
                     
                     print(f"🚀 Creating Janus streams - Primary: {instance.id}, WebRTC: {webrtc_stream_id}")
                     
                     # Start Janus stream creation with 60-second delay
                     main_api.apply_async(
-                        countdown=60,
+                        countdown=30,
                         args=[instance.id, webrtc_stream_id, instance.url],
                         queue='prefork_queue'
                     )
@@ -284,7 +284,7 @@ def DeleteCounting(request, stream_id, id):
         print(f"Deleting stream ID: {ss}")
         
         # FIXED: Use simple offset calculation instead of large number subtraction
-        webrtc_stream_id = int(ss) + 10000
+        webrtc_stream_id = 2147483647 - int(ss) 
         
         print(f"Deleting Janus streams - Primary: {ss}, WebRTC: {webrtc_stream_id}")
         
@@ -313,7 +313,7 @@ def DeleteCounting(request, stream_id, id):
         
         # FIXED: Delete from MediaMTX using correct Kubernetes service name
         try:
-            mediamtx_url = f"http://mediamtx-normal-service:9997/v3/config/paths/delete/live%2F{ss}"
+            mediamtx_url = f"http://admin:admin@mediamtx-normal-service:9997/v3/config/paths/delete/live%2F{ss}"
             rtsp_delete_response = requests.delete(mediamtx_url, timeout=10)
             print(f"MediaMTX delete response: {rtsp_delete_response.status_code}")
         except Exception as e:

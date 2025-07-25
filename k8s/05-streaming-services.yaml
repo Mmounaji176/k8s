@@ -721,7 +721,7 @@ data:
 
 
     rtsp: yes
-    rtspTransports: [udp, multicast, tcp]
+    rtspTransports: [udp, tcp]
     rtspEncryption: "no"
     rtspAddress: :8554
     rtspsAddress: :8322
@@ -914,19 +914,6 @@ spec:
           name: api
         - containerPort: 9998
           name: metrics
-        env:
-        - name: MTX_RTSPADDRESS
-          value: ":8554"
-        - name: MTX_APIADDRESS
-          value: ":9997"
-        - name: MTX_INSTANCE
-          value: "primary"
-        - name: MTX_PROTOCOLS
-          value: "tcp"
-        - name: MTX_API
-          value: "yes"
-        - name: MTX_APIALLOWALL
-          value: "yes"
         volumeMounts:
         - name: mediamtx-config
           mountPath: /mediamtx.yml
@@ -1064,18 +1051,17 @@ spec:
           name: api
         - containerPort: 9998
           name: metrics
-     
         volumeMounts:
         - name: mediamtx-config
           mountPath: /mediamtx.yml
           subPath: mediamtx.yml
         resources:
           limits:
-            cpu: "1500m"
+            cpu: "2000m"
             memory: "2Gi"
           requests:
-            cpu: "500m"
-            memory: "512Mi"
+            cpu: "1000m"
+            memory: "1Gi"
         readinessProbe:
           tcpSocket:
             port: 8554
