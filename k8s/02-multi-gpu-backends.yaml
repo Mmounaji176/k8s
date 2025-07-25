@@ -44,7 +44,7 @@ spec:
           echo "Redis is ready!"
       containers:
       - name: django-backend
-        image: bwalidd/new-django:cuda-12.6-dynamic-vv8 #v 3 5 6good  #v 3 good
+        image: bwalidd/new-django:cuda-12.6-dynamic-vv9 #v 3 5 6good  #v 3 good
         workingDir: /app/Backend
         command: ["/bin/bash", "-c"]
         args:
@@ -269,7 +269,7 @@ spec:
           echo "Redis is ready!"
       containers:
       - name: django-backend
-        image: bwalidd/new-django:cuda-12.6-dynamic-vv8 #v 3  6 5 good
+        image: bwalidd/new-django:cuda-12.6-dynamic-vv9 #v 3  6 5 good
         workingDir: /app/Backend
         command: ["/bin/bash", "-c"]
         args:
