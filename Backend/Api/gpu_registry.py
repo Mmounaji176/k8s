@@ -4,7 +4,7 @@ import redis
 import socket
 import json
 
-REDIS_URL = os.getenv('REDIS_URL', 'redis://:admin@redis-primary-service:6379/0')
+REDIS_URL = os.getenv('REDIS_CHANNEL_URL', 'redis://:admin@redis-channels-service:6380/0')
 REGISTRY_KEY = 'gpu_registry'
 HEARTBEAT_INTERVAL = 10  # seconds
 STALE_THRESHOLD = 30    # seconds
@@ -89,6 +89,7 @@ def heartbeat():
 def get_all_gpus():
     """Return a list of all registered GPUs and their status from the registry."""
     all_pods = r.hgetall(REGISTRY_KEY)
+    print(f"All registered pods: {all_pods.keys()} ")
     result = []
     for pod_id, pod_info in all_pods.items():
         pod_info = json.loads(pod_info)

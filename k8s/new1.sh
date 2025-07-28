@@ -335,7 +335,7 @@ run_django_migrations1() {
     
     # Wait for pods to be fully ready first
     print_status "info" "Waiting for backend pods to be ready..."
-    kubectl wait --for=condition=Ready pod -l app=django-backend -n $NAMESPACE --timeout=300s
+    kubectl wait --for=condition=Ready pod -l app=django-backend -n $NAMESPACE --timeout=500s
     
     # Give pods extra time to fully initialize
     sleep 30

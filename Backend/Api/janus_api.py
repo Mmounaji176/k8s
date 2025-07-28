@@ -348,7 +348,7 @@ def main_api(stream_id, webrtc_stream_id, local_stream_url):
             
             body = {
                 "name": f"live/{stream_id}",
-                "source": encode_rtsp_url(source_url),
+                "source": source_url,
                 "sourceOnDemand": False,
          
             }
@@ -475,7 +475,7 @@ def main_api(stream_id, webrtc_stream_id, local_stream_url):
     
     # Step 5: Add primary stream to Janus
     print(f"🎬 Adding stream {stream_id} to Janus...")
-    webrtc_stream = f"rtsp:/mediamtx-primary-service:8554/live/{stream_id}"
+    webrtc_stream = f"rtsp://mediamtx-primary-service:8554/live/{stream_id}"
     primary_result = add_stream_to_janus(session_id, handle_id, stream_id, webrtc_stream)
     
     # Step 6: Add WebRTC stream to Janus (if different from primary)
