@@ -727,7 +727,7 @@ def main_zone(*args , **kwargs):
 
     while True:
         try:
-            ip = "34.60.157.241"
+            ip = "mediamtx-primary-service"
             place_id = f"{args[12]}"
             ffmpeg_stream_url = f'rtsp://{ip}:8554/live/{place_id}'
             

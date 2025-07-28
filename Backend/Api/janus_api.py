@@ -348,7 +348,7 @@ def main_api(stream_id, webrtc_stream_id, local_stream_url):
             
             body = {
                 "name": f"live/{stream_id}",
-                "source": source_url,
+                "source": encode_rtsp_url(source_url),
                 "sourceOnDemand": False,
          
             }
