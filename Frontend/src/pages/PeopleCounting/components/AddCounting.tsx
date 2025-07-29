@@ -309,6 +309,8 @@ export const AddStreamCountingButton = ({
 
   const handleSubmitStepOne = async () => {
     const gpuPrefix = `/gpu${streamStore.gpu_id}`;
+    console.log("Using GPU prefix:", gpuPrefix);
+    console.log("streamStore pod", streamStore.pod_id);
     stream.places.forEach(
       async (element: { name: string | undefined; id: number }) => {
         if (element.name === streamStore.place) {
@@ -327,6 +329,7 @@ export const AddStreamCountingButton = ({
               gpu_id: `${streamStore.gpu_id}`
             }
           );
+          console.log("streamstore data", streamStore);
           streamStore.setResponse(response.data);
           streamStore.setId(response.data.id);
           if (places[indexplace]?.id) {

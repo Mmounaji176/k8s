@@ -34,7 +34,7 @@ spec:
             path: /gpu1(/|$)(.*)
             backend:
               service:
-                name: django-backend-gpu-1-service
+                name: django-backend-gpu-0-service # backend for gpu1 service 
                 port:
                   number: 9898
 
