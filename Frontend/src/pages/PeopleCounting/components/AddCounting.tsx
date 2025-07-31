@@ -80,6 +80,7 @@ type ACTION = {
   setPodId: (data: string) => void;
   setGpuId: (data: number) => void;
   setService: (data: string) => void;
+  setGpuPrefix: (data: number) => void;
   response: any;
   handleSubmit: () => void;
 };
@@ -91,6 +92,7 @@ const useAddStreamStore = create<STORE & ACTION>((set) => ({
   model: "",
   cuda_device: 0,
   response: null,
+  prefix_gpu_id: 0,
   pod_id: "",
   gpu_id: 0,
   service: "",
@@ -109,6 +111,9 @@ const useAddStreamStore = create<STORE & ACTION>((set) => ({
   },
   setResponse(data) {
     set({ response: data });
+  },
+  setGpuPrefix(data) {
+    set({ prefix_gpu_id: data });
   },
   setModel(data) {
     set({ model: data });
@@ -130,7 +135,7 @@ const useAddStreamStore = create<STORE & ACTION>((set) => ({
   },
 }));
 
-type GpuInfo = { pod: string; node: string; gpu_id: number; status: string; last_heartbeat: number; service: string };
+type GpuInfo = { pod: string; node: string; gpu_id: number;prefix_gpu_id: number; status: string; last_heartbeat: number; service: string };
 const useDynamicGpuSelection = () => {
   const [gpus, setGpus] = useState<GpuInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -161,6 +166,7 @@ const StepOne = (places: any, indexplace: number, streamtype: string) => {
       streamStore.setCudaDevice(gpu.gpu_id);
       streamStore.setGpuId(gpu.gpu_id);
       streamStore.setPodId(gpu.pod);
+      streamStore.setGpuPrefix(gpu.prefix_gpu_id);
       streamStore.setService(gpu.service);
       streamStore.setResponse({ ...streamStore.response, pod_id: gpu.pod });
     }
@@ -308,7 +314,7 @@ export const AddStreamCountingButton = ({
   }, []);
 
   const handleSubmitStepOne = async () => {
-    const gpuPrefix = `/gpu${streamStore.gpu_id}`;
+    const gpuPrefix = `/gpu${streamStore.prefix_gpu_id}`;
     console.log("Using GPU prefix:", gpuPrefix);
     console.log("streamStore pod", streamStore.pod_id);
     stream.places.forEach(
@@ -386,7 +392,7 @@ const handleSubmitStepTwo = async () => {
     console.log("streamStore.id", streamStore.id);
     
     // FIXED: Add the GPU prefix to the PATCH request
-    const gpuPrefix = `/gpu${streamStore.gpu_id}`;
+    const gpuPrefix = `/gpu${streamStore.prefix_gpu_id}`;
     console.log("Using GPU prefix:", gpuPrefix);
     
     const response = await axios.patch(

@@ -44,7 +44,7 @@ spec:
           echo "Redis is ready!"
       containers:
       - name: django-backend
-        image: bwalidd/new-django:cuda-12.6-dynamic-vv14 #v 3 5 6good  #v 3 good
+        image: bwalidd/new-django:cuda-12.6-dynamic-vv15 #v 3 5 6good  #v 3 good
         workingDir: /app/Backend
         command: ["/bin/bash", "-c"]
         args:
@@ -62,13 +62,14 @@ spec:
               
               # Get GPU IDs for registry
               gpu_ids = [int(x.strip()) for x in os.getenv('GPU_REGISTRY_IDS', '0,1').split(',') if x.strip()]
+              Prefix_GPU_ID = [int(x.strip()) for x in os.getenv('PREFIX_GPU_ID', '0,1').split(',') if x.strip()]
               print(f'Registering GPUs: {gpu_ids}')
               print(f'Pod: {os.getenv(\"HOSTNAME\", \"unknown\")}')
               print(f'Node: {os.getenv(\"NODE_NAME\", \"unknown\")}')
               print(f'Service: {os.getenv(\"BACKEND_SERVICE_NAME\", \"unknown\")}')
               
               # Register GPUs
-              register_pod_gpus(gpu_ids)
+              register_pod_gpus(gpu_ids , Prefix_GPU_ID)
               print(f'GPU registration complete for GPUs: {gpu_ids}')
               
               # Start heartbeat thread
@@ -114,6 +115,8 @@ spec:
           value: "0,1"  # Global GPU IDs for registry
         - name: GPU_GROUP
           value: "0"
+        - name: PREFIX_GPU_ID
+          value: "0,1"
         - name: BACKEND_SERVICE_NAME
           value: "django-backend-gpu-0-service"
         - name: NODE_NAME
@@ -269,7 +272,7 @@ spec:
           echo "Redis is ready!"
       containers:
       - name: django-backend
-        image: bwalidd/new-django:cuda-12.6-dynamic-vv14 #v 3  6 5 good
+        image: bwalidd/new-django:cuda-12.6-dynamic-vv15 #v 3  6 5 good
         workingDir: /app/Backend
         command: ["/bin/bash", "-c"]
         args:
@@ -286,14 +289,15 @@ spec:
               from Api.gpu_registry import register_pod_gpus, heartbeat
               
               # Get GPU IDs for registry
-              gpu_ids = [int(x.strip()) for x in os.getenv('GPU_REGISTRY_IDS', '2,3').split(',') if x.strip()]
+              gpu_ids = [int(x.strip()) for x in os.getenv('GPU_REGISTRY_IDS', '0,1').split(',') if x.strip()]
+              Prefix_GPU_ID = [int(x.strip()) for x in os.getenv('PREFIX_GPU_ID', '2,3').split(',') if x.strip()]
               print(f'Registering GPUs: {gpu_ids}')
               print(f'Pod: {os.getenv(\"HOSTNAME\", \"unknown\")}')
               print(f'Node: {os.getenv(\"NODE_NAME\", \"unknown\")}')
               print(f'Service: {os.getenv(\"BACKEND_SERVICE_NAME\", \"unknown\")}')
               
               # Register GPUs
-              register_pod_gpus(gpu_ids)
+              register_pod_gpus(gpu_ids, Prefix_GPU_ID)
               print(f'GPU registration complete for GPUs: {gpu_ids}')
               
               # Start heartbeat thread
@@ -336,9 +340,11 @@ spec:
         
         # GPU Registry Configuration
         - name: GPU_REGISTRY_IDS
-          value: "2,3"  # Global GPU IDs for registry
+          value: "0,1"  # Global GPU IDs for registry
         - name: GPU_GROUP
           value: "1"
+        - name: PREFIX_GPU_ID
+          value: "2,3"
         - name: BACKEND_SERVICE_NAME
           value: "django-backend-gpu-1-service"
         - name: NODE_NAME

@@ -23,7 +23,13 @@ app.conf.update(
 if __name__ == "__main__" or True:
     gpu_count = torch.cuda.device_count()
     gpu_ids = list(range(gpu_count))
-    register_pod_gpus(gpu_ids)
+    
+    # Get prefix GPU IDs from environment
+    prefix_gpu_ids = None
+    if os.getenv('PREFIX_GPU_ID'):
+        prefix_gpu_ids = [int(x.strip()) for x in os.getenv('PREFIX_GPU_ID', '').split(',') if x.strip()]
+    
+    register_pod_gpus(gpu_ids, prefix_gpu_ids)
 
     # Start heartbeat thread
     def heartbeat_thread():

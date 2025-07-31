@@ -86,7 +86,7 @@ spec:
         kubernetes.io/hostname: bluedove2-ms-7b98
       containers:
       - name: react-frontend
-        image: bwalidd/new-django:front-new-12.6-dynamic-vv1 #35good -- only janus error
+        image: bwalidd/new-django:front-new-12.6-dynamic-vv2 #35good -- only janus error
         ports:
         - containerPort: 9999
         resources:

@@ -38,22 +38,39 @@ def get_service_name():
     return f'django-backend-gpu-{pod_id}-service'
 
 
-def register_pod_gpus(gpu_ids):
+def register_pod_gpus(gpu_ids, prefix_gpu_ids=None):
     """Register all GPUs managed by this pod in the Redis registry."""
     pod_id = get_pod_id()
     node = get_node_name()
     service = get_service_name()
     now = int(time.time())
-    gpus = [
-        {'id': gpu_id, 'status': 'idle', 'last_heartbeat': now}
-        for gpu_id in gpu_ids
-    ]
+    
+    # Create GPU entries with prefix information
+    gpus = []
+    for i, gpu_id in enumerate(gpu_ids):
+        gpu_info = {
+            'id': gpu_id, 
+            'status': 'idle', 
+            'last_heartbeat': now
+        }
+        
+        # Add prefix GPU ID if provided
+        if prefix_gpu_ids and i < len(prefix_gpu_ids):
+            gpu_info['prefix_id'] = prefix_gpu_ids[i]
+        
+        gpus.append(gpu_info)
+    
     pod_info = {
         'node': node,
         'service': service,
         'gpus': gpus,
         'last_heartbeat': now
     }
+    
+    # Add prefix GPU IDs to pod info if provided
+    if prefix_gpu_ids:
+        pod_info['prefix_gpu_ids'] = prefix_gpu_ids
+    
     r.hset(REGISTRY_KEY, pod_id, json.dumps(pod_info))
 
 
@@ -94,15 +111,23 @@ def get_all_gpus():
     for pod_id, pod_info in all_pods.items():
         pod_info = json.loads(pod_info)
         service = pod_info.get('service', None)
+        prefix_gpu_ids = pod_info.get('prefix_gpu_ids', [])
+        
         for gpu in pod_info['gpus']:
-            result.append({
+            gpu_info = {
                 'pod': pod_id.decode() if isinstance(pod_id, bytes) else pod_id,
                 'node': pod_info['node'],
                 'gpu_id': gpu['id'],
                 'status': gpu['status'],
                 'last_heartbeat': gpu['last_heartbeat'],
                 'service': service
-            })
+            }
+            
+            # Add prefix GPU ID if available
+            if 'prefix_id' in gpu:
+                gpu_info['prefix_gpu_id'] = gpu['prefix_id']
+            
+            result.append(gpu_info)
     return result
 
 
@@ -155,6 +180,7 @@ def mark_gpu_idle(pod_id, gpu_id):
 #       "pod": "pod-0-uuid",
 #       "node": "worker-node-1",
 #       "gpu_id": 0,
+#       "prefix_gpu_id": 0,
 #       "status": "idle",
 #       "last_heartbeat": 1710000000,
 #       "service": "django-backend-gpu0-service"
@@ -163,22 +189,16 @@ def mark_gpu_idle(pod_id, gpu_id):
 #       "pod": "pod-0-uuid",
 #       "node": "worker-node-1",
 #       "gpu_id": 1,
+#       "prefix_gpu_id": 1,
 #       "status": "busy",
 #       "last_heartbeat": 1710000001,
 #       "service": "django-backend-gpu0-service"
 #     },
 #     {
-#       "pod": "pod-0-uuid",
-#       "node": "worker-node-1",
-#       "gpu_id": 2,
-#       "status": "idle",
-#       "last_heartbeat": 1710000002,
-#       "service": "django-backend-gpu0-service"
-#     },
-#     {
 #       "pod": "pod-1-uuid",
 #       "node": "worker-node-2",
-#       "gpu_id": 3,
+#       "gpu_id": 0,
+#       "prefix_gpu_id": 2,
 #       "status": "idle",
 #       "last_heartbeat": 1710000003,
 #       "service": "django-backend-gpu1-service"
@@ -186,27 +206,12 @@ def mark_gpu_idle(pod_id, gpu_id):
 #     {
 #       "pod": "pod-1-uuid",
 #       "node": "worker-node-2",
-#       "gpu_id": 4,
+#       "gpu_id": 1,
+#       "prefix_gpu_id": 3,
 #       "status": "idle",
 #       "last_heartbeat": 1710000004,
 #       "service": "django-backend-gpu1-service"
-#     },
-#     {
-#       "pod": "pod-1-uuid",
-#       "node": "worker-node-2",
-#       "gpu_id": 5,
-#       "status": "busy",
-#       "last_heartbeat": 1710000005,
-#       "service": "django-backend-gpu1-service"
-#     },
-#     {
-#       "pod": "pod-2-uuid",
-#       "node": "worker-node-3",
-#       "gpu_id": 6,
-#       "status": "idle",
-#       "last_heartbeat": 1710000006,
-#       "service": "django-backend-gpu2-service"
 #     }
-#     // ... and so on for GPUs 7, 8, 9
+#     // ... and so on for other GPUs
 #   ]
 # }
