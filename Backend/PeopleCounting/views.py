@@ -55,6 +55,7 @@ def PostStream(request):
         import socket
         current_pod = os.getenv('HOSTNAME', socket.gethostname())
         current_gpu_ids = os.getenv('GPU_ID', '0').split(',')
+        print(f"Current pod: {current_pod}, GPU IDs: {current_gpu_ids}")
         if request.data["pod_id"] != current_pod:
             return HttpResponseForbidden("This pod cannot process GPU tasks for another pod.")
         if str(request.data["gpu_id"]) not in current_gpu_ids:
@@ -262,7 +263,7 @@ def PostStream(request):
             serializer = ImageProcSerializer(instance, data=detection, partial=True) 
             if serializer.is_valid():
                 serializer.save()
-                print(f"✅ Stream {instance.id} created successfully")
+                print(f"✅ Stream {instance.id} created successfully in {request.data['cuda_device']} GPU of pod {request.data['pod_id']}")
                 return Response(serializer.data)
             else:
                 return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)

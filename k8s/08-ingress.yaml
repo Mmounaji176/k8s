@@ -37,6 +37,20 @@ spec:
                 name: django-backend-gpu-0-service # backend for gpu1 service 
                 port:
                   number: 9898
+          - pathType: ImplementationSpecific
+            path: /gpu2(/|$)(.*)
+            backend:
+              service:
+                name: django-backend-gpu-1-service # backend for gpu1 service 
+                port:
+                  number: 9898
+          - pathType: ImplementationSpecific
+            path: /gpu3(/|$)(.*)
+            backend:
+              service:
+                name: django-backend-gpu-1-service # backend for gpu1 service 
+                port:
+                  number: 9898
 
 ---
 # Janus WebRTC Gateway ingress - Simplified without ConfigMap

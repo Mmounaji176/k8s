@@ -792,6 +792,9 @@ def main(*args ,**kwargs):
     os.environ["CUDA_VISIBLE_DEVICES"] = str(gpu_id)
     
     import torch
+    print("Initializing main function with args:")
+    for i, arg in enumerate(args):
+        print(f"Arg {i}: {arg}\n")
     print("CUDA available:", torch.cuda.is_available())
     print("CUDA version:", torch.version.cuda)
     print("PyTorch version:", torch.__version__)

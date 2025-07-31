@@ -332,7 +332,7 @@ def mainloop(rtsp_url, title, place_id, cudadevice, webrtc_stream_id, local_stre
     print("PyTorch version:", torch.__version__)
     print(f"Current CUDA device: {torch.cuda.current_device()}") 
     print(torch.cuda.device_count())
-    print("---------------")
+    print("-1--------------")
     
     def handle_ffmpeg_process(frame, ffmpeg_process, width, height, stream_url):
         try:
