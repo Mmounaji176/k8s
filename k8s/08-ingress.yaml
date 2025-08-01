@@ -41,14 +41,14 @@ spec:
             path: /gpu2(/|$)(.*)
             backend:
               service:
-                name: django-backend-gpu-1-service # backend for gpu1 service 
+                name: django-backend-gpu-0-service # backend for gpu1 service 
                 port:
                   number: 9898
           - pathType: ImplementationSpecific
             path: /gpu3(/|$)(.*)
             backend:
               service:
-                name: django-backend-gpu-1-service # backend for gpu1 service 
+                name: django-backend-gpu-0-service # backend for gpu1 service 
                 port:
                   number: 9898
 
@@ -138,6 +138,13 @@ spec:
                   number: 9898
           - pathType: Prefix
             path: /database
+            backend:
+              service:
+                name: django-backend-gpu-0-service #backend-loadbalancer-service
+                port:
+                  number: 9898
+          - pathType: Prefix
+            path: /static
             backend:
               service:
                 name: django-backend-gpu-0-service #backend-loadbalancer-service
