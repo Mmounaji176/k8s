@@ -258,17 +258,59 @@ get_database_ip() {
 }
 
 
+# Add this to your build script in the deploy_multi_gpu_backends function
+
+
 deploy_multi_gpu_backends() {
-    print_section "Deploying Multi-GPU Backends"
+    print_section "Deploying Multi-GPU Backends with Proper Migration Timing"
     
-    print_status "info" "Deploying multi-GPU backends (2 GPUs per pod)..."
-    echo "sleep 40 seconds ... waiting for database to stabilize"
-    sleep 40  # Wait for database to stabilize before deploying backends
-    kubectl apply -f 02-multi-gpu-backends.yaml
+    print_status "info" "Step 1: Deploying GPU0 first for migrations..."
     
-    print_status "info" "Waiting for multi-GPU pods to start..."
-    sleep 20
+    # Deploy only GPU0 first using the correct label selector
+    kubectl apply -f 02-multi-gpu-backends.yaml --selector=app=django-backend,gpu-id=gpu0
     
+    # Wait for GPU0 to be ready
+    print_status "info" "Waiting for GPU0 pod to be ready..."
+    kubectl wait --for=condition=Ready pod -l app=django-backend,gpu-id=gpu0 -n $NAMESPACE --timeout=500s
+    
+    # Run migrations on GPU0
+    print_status "info" "Running migrations on GPU0..."
+    GPU0_POD=$(kubectl get pods -n $NAMESPACE -l app=django-backend,gpu-id=gpu0 -o jsonpath='{.items[0].metadata.name}')
+    
+    kubectl exec -n $NAMESPACE $GPU0_POD -- python manage.py migrate
+    
+    # Create superuser
+    kubectl exec -n $NAMESPACE $GPU0_POD -- python manage.py shell -c "
+from Api.models import CustomUser
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+try:
+    if not User.objects.filter(username='bluedove').exists():
+        user = User.objects.create_superuser(
+            username='bluedove',
+            email='root@root.com',
+            password='Bluedove1234'
+        )
+        print('✅ Superuser created successfully')
+    else:
+        print('ℹ️  Superuser already exists')
+except Exception as e:
+    print(f'❌ Error creating superuser: {e}')
+"
+    
+    print_status "success" "GPU0 initialized with migrations complete"
+    
+    # Now deploy GPU1
+    print_status "info" "Step 2: Deploying GPU1 (migrations already complete)..."
+    kubectl apply -f 02-multi-gpu-backends.yaml --selector=app=django-backend,gpu-id=gpu1
+    
+    # Wait for both pods
+    print_status "info" "Waiting for both GPU pods to be ready..."
+    kubectl wait --for=condition=Ready pod -l app=django-backend -n $NAMESPACE --timeout=500s
+    
+    print_status "success" "Multi-GPU backends deployed with proper migration timing"
 }
 
 deploy_remaining_services() {
@@ -585,7 +627,7 @@ main() {
     # Deploy multi-GPU backends
     deploy_multi_gpu_backends
     # run_django_migrations
-    run_django_migrations1
+    # run_django_migrations1
     deploy_remaining_services
     # Deploy remaining services
     
